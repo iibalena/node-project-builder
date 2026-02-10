@@ -1,0 +1,29 @@
+import { Controller, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
+import { WebhooksService } from './webhooks.service';
+
+type RawBodyRequest = Request & { rawBody?: Buffer };
+
+@Controller('webhooks')
+export class WebhooksController {
+  constructor(private readonly webhooksService: WebhooksService) {}
+
+  @Post('github')
+  async github(@Req() req: RawBodyRequest) {
+    const rawBody = req.rawBody ?? Buffer.from('');
+    const payload = req.body;
+
+    await this.webhooksService.handleGithubEvent({
+      rawBody,
+      headers: {
+        'x-hub-signature-256': String(req.headers['x-hub-signature-256'] ?? ''),
+        'x-github-event': String(req.headers['x-github-event'] ?? ''),
+        'x-github-delivery': String(req.headers['x-github-delivery'] ?? ''),
+      },
+      payload,
+    });
+
+    // sempre 200 pro GitHub não ficar retryando por motivo bobo
+    return { ok: true };
+  }
+}
