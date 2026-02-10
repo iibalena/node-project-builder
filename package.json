@@ -1,0 +1,41 @@
+{
+  "name": "project-builder",
+  "version": "1.0.0",
+  "description": "A modular CLI to scaffold Node.js projects using a plugin-based architecture",
+  "main": "index.js",
+  "bin": {
+    "project-builder": "./bin/project-builder.js"
+  },
+  "scripts": {
+    "test": "jest",
+    "start": "node bin/project-builder.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iibalena/node-project-builder.git"
+  },
+  "keywords": [
+    "cli",
+    "scaffolding",
+    "project-builder",
+    "plugin-based",
+    "nodejs",
+    "generator"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/iibalena/node-project-builder/issues"
+  },
+  "homepage": "https://github.com/iibalena/node-project-builder#readme",
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^14.0.3",
+    "ejs": "^4.0.1",
+    "inquirer": "^13.2.2"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0"
+  }
+}
