@@ -1,0 +1,40 @@
+# Node / pnpm
+node_modules/
+.pnpm-store/
+.pnpm-debug.log
+
+# Build
+dist/
+build/
+out/
+
+# Nest
+coverage/
+.nest/
+
+# Logs
+*.log
+logs/
+storage/logs/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Artifacts / workdir
+storage/
+workdir/
+artifacts/
+
+# Temp
+tmp/
+temp/
