@@ -6,6 +6,10 @@ async function bootstrap() {
     rawBody: true,
   });
 
-  await app.listen(3000);
+  const port = Number(process.env.API_PORT ?? 3000);
+
+  await app.listen(port);
+  console.log(`API running on port ${port}`);
+
 }
 bootstrap();
