@@ -1,13 +1,11 @@
 import {
   Column,
-  CreateDateColumn,
   Entity,
   Index,
   JoinColumn,
   ManyToOne,
-  PrimaryGeneratedColumn,
-  UpdateDateColumn,
 } from 'typeorm';
+import { BaseEntity } from './base.entity';
 import { RepoEntity } from './repo.entity';
 
 export enum BuildTrigger {
@@ -24,10 +22,7 @@ export enum BuildStatus {
 }
 
 @Entity({ name: 'builds' })
-export class BuildEntity {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
+export class BuildEntity extends BaseEntity {
   @Column({ type: 'uuid', name: 'repo_id' })
   @Index()
   repoId: string;
@@ -42,10 +37,10 @@ export class BuildEntity {
   @Column({ type: 'varchar', length: 300 })
   ref: string;
 
-  @Column({ type: 'varchar', length: 60 })
+  @Column({ name: 'commit_sha', type: 'varchar', length: 60 })
   commitSha: string;
 
-  @Column({ type: 'integer', nullable: true })
+  @Column({ name: 'pr_number', type: 'integer', nullable: true })
   prNumber: number | null;
 
   @Column({ type: 'varchar', length: 20, default: BuildStatus.QUEUED })
@@ -54,12 +49,6 @@ export class BuildEntity {
   @Column({ type: 'text', nullable: true })
   log: string | null;
 
-  @Column({ type: 'text', nullable: true, name: 'artifact_path' })
+  @Column({ name: 'artifact_path', type: 'text', nullable: true })
   artifactPath: string | null;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt: Date;
 }

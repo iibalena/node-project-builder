@@ -1,39 +1,24 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  OneToMany,
-  PrimaryGeneratedColumn,
-  UpdateDateColumn,
-} from 'typeorm';
+import { Column, Entity, OneToMany } from 'typeorm';
+import { BaseEntity } from './base.entity';
 import { BuildEntity } from './build.entity';
 
 @Entity({ name: 'repos' })
-export class RepoEntity {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
+export class RepoEntity extends BaseEntity {
   @Column({ type: 'varchar', length: 120 })
   owner: string;
 
   @Column({ type: 'varchar', length: 200 })
   name: string;
 
-  @Column({ type: 'text' })
+  @Column({ name: 'clone_url', type: 'text' })
   cloneUrl: string;
 
-  @Column({ type: 'varchar', length: 200, default: 'main' })
+  @Column({  name: 'default_branch', type: 'varchar', length: 200, default: 'main' })
   defaultBranch: string;
 
-  @Column({ type: 'boolean', default: true })
+  @Column({  name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
   @OneToMany(() => BuildEntity, (b) => b.repo)
   builds: BuildEntity[];
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamptz' })
-  updatedAt: Date;
 }
