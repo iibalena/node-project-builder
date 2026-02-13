@@ -6,6 +6,7 @@ import { ApiService } from './api.service';
 import { ReposModule } from './repos/repos.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { BuildsModule } from './builds/builds.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { BuildsModule } from './builds/builds.module';
     ReposModule,
     WebhooksModule,
     BuildsModule,
+    SyncModule,
   ],
   controllers: [ApiController],
   providers: [ApiService],
