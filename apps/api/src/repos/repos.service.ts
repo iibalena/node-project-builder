@@ -15,6 +15,8 @@ export class ReposService {
     name: string;
     cloneUrl: string;
     defaultBranch?: string;
+    installCommand?: string | null;
+    useLegacyPeerDeps?: boolean;
   }): Promise<RepoEntity> {
     const repo = this.repoRepository.create({
       owner: data.owner,
@@ -22,6 +24,8 @@ export class ReposService {
       cloneUrl: data.cloneUrl,
       defaultBranch: data.defaultBranch ?? 'main',
       isActive: true,
+      installCommand: data.installCommand ?? null,
+      useLegacyPeerDeps: data.useLegacyPeerDeps ?? false,
     });
 
     return this.repoRepository.save(repo);

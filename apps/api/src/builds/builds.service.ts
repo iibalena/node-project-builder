@@ -10,7 +10,7 @@ export class BuildsService {
     private readonly buildRepository: Repository<BuildEntity>,
   ) {}
 
-  async list(args: { repoId?: string; status?: string }) {
+  async list(args: { repoId?: number; status?: string }) {
     const qb = this.buildRepository
       .createQueryBuilder('b')
       .orderBy('b.createdAt', 'DESC')

@@ -10,6 +10,10 @@ export class BuildsController {
     @Query('repoId') repoId?: string,
     @Query('status') status?: string,
   ) {
-    return this.buildsService.list({ repoId, status });
+    const parsedRepoId = repoId ? Number(repoId) : undefined;
+    return this.buildsService.list({
+      repoId: Number.isFinite(parsedRepoId) ? parsedRepoId : undefined,
+      status,
+    });
   }
 }

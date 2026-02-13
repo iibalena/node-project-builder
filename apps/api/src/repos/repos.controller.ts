@@ -8,7 +8,14 @@ export class ReposController {
   @Post()
   async create(
     @Body()
-    body: { owner: string; name: string; cloneUrl: string; defaultBranch?: string },
+    body: {
+      owner: string;
+      name: string;
+      cloneUrl: string;
+      defaultBranch?: string;
+      installCommand?: string;
+      useLegacyPeerDeps?: boolean;
+    },
   ) {
     return this.reposService.create(body);
   }
