@@ -23,9 +23,9 @@ export enum BuildStatus {
 
 @Entity({ name: 'builds' })
 export class BuildEntity extends BaseEntity {
-  @Column({ type: 'uuid', name: 'repo_id' })
+  @Column({ type: 'integer', name: 'repo_id' })
   @Index()
-  repoId: string;
+  repoId: number;
 
   @ManyToOne(() => RepoEntity, (r) => r.builds, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'repo_id' })
