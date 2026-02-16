@@ -19,6 +19,7 @@ export class SyncController {
       repoId: number;
       prNumber?: number;
       ref?: string;
+      force?: boolean;
     },
   ) {
     const repo = await this.repoRepository.findOne({
@@ -33,6 +34,26 @@ export class SyncController {
       repo,
       prNumber: body.prNumber,
       ref: body.ref,
+      force: body.force === true,
     });
+  }
+
+  @Post('repo')
+  async syncRepo(
+    @Body()
+    body: {
+      repoId: number;
+    },
+  ) {
+    const repo = await this.repoRepository.findOne({
+      where: { id: body.repoId, isActive: true },
+    });
+
+    if (!repo) {
+      throw new NotFoundException('repo_not_found');
+    }
+
+    await this.buildSync.syncRepo(repo, { ignoreCooldown: true });
+    return { ok: true };
   }
 }

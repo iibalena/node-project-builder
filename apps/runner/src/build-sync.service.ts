@@ -85,13 +85,19 @@ export class BuildSyncService {
     sha: string;
     prNumber: number | null;
     ignoreCooldown?: boolean;
+    force?: boolean;
   }) {
     this.logger.log(
       `Sync avaliando ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'} sha=${args.sha}`,
     );
+    if (args.force) {
+      this.logger.log(
+        `Build force enabled for ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`,
+      );
+    }
     const refKey = this.buildRefKey(args.ref, args.prNumber);
     const state = await this.getRefState(args.repo.id, refKey);
-    if (state && state.lastSha === args.sha) {
+    if (!args.force && state && state.lastSha === args.sha) {
       const hasSuccess = await this.buildRepository.findOne({
         where: {
           repoId: args.repo.id,
@@ -111,7 +117,7 @@ export class BuildSyncService {
       this.logger.log(`Build retry (same SHA, last not successful) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`);
     }
 
-    if (!args.ignoreCooldown && state?.lastEnqueuedAt) {
+    if (!args.force && !args.ignoreCooldown && state?.lastEnqueuedAt) {
       const elapsed = Date.now() - state.lastEnqueuedAt.getTime();
       if (elapsed < this.getCooldownMs()) {
         this.logger.log(`Build skip (cooldown) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`);
@@ -119,12 +125,14 @@ export class BuildSyncService {
       }
     }
 
-    const queued = await this.hasActiveBuild(args.repo.id, args.sha);
-    if (queued) {
-      this.logger.log(
-        `Build skip (active build) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'} buildId=${queued.id}`,
-      );
-      return false;
+    if (!args.force) {
+      const queued = await this.hasActiveBuild(args.repo.id, args.sha);
+      if (queued) {
+        this.logger.log(
+          `Build skip (active build) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'} buildId=${queued.id}`,
+        );
+        return false;
+      }
     }
 
     const createdBuild = await this.buildRepository.save(
@@ -238,6 +246,7 @@ export class BuildSyncService {
     repo: RepoEntity;
     prNumber?: number;
     ref?: string;
+    force?: boolean;
   }) {
     this.logger.log(
       `Sync manual ${args.repo.owner}/${args.repo.name} pr=${args.prNumber ?? 'n/a'} ref=${args.ref ?? 'n/a'}`,
@@ -262,6 +271,7 @@ export class BuildSyncService {
         ref: match.ref,
         sha: match.sha,
         prNumber: match.number,
+        force: args.force,
       });
 
       return { ok: true, enqueued: created, ref: match.ref, sha: match.sha };
@@ -281,6 +291,7 @@ export class BuildSyncService {
         ref,
         sha,
         prNumber: null,
+        force: args.force,
       });
 
       return { ok: true, enqueued: created, ref, sha };

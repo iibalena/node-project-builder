@@ -11,11 +11,14 @@ export class SyncController {
     body: {
       repoId: number;
       prNumber?: number;
+      pr?: number;
       ref?: string;
+      force?: boolean;
     },
   ) {
     const repoId = Number(body.repoId);
-    const prNumber = body.prNumber !== undefined ? Number(body.prNumber) : undefined;
+    const prRaw = body.prNumber !== undefined ? body.prNumber : body.pr;
+    const prNumber = prRaw !== undefined ? Number(prRaw) : undefined;
 
     if (!Number.isFinite(repoId)) {
       throw new BadRequestException('repoId must be a number');
@@ -25,6 +28,7 @@ export class SyncController {
       repoId,
       prNumber: Number.isFinite(prNumber) ? prNumber : undefined,
       ref: body.ref,
+      force: body.force === true,
     });
   }
 }
