@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { ReposService } from './repos.service';
 
 @Controller('repos')
@@ -11,7 +11,7 @@ export class ReposController {
     body: {
       owner: string;
       name: string;
-      cloneUrl: string;
+      cloneUrl?: string;
       defaultBranch?: string;
       installCommand?: string;
       useLegacyPeerDeps?: boolean;
@@ -23,5 +23,10 @@ export class ReposController {
   @Get()
   async list() {
     return this.reposService.list();
+  }
+
+  @Delete(':id')
+  async delete(@Param('id') id: string) {
+    return this.reposService.delete(Number(id));
   }
 }
