@@ -15,6 +15,14 @@ export class BuildPreparationService {
     return process.env.WORKDIR ?? path.join(process.cwd(), 'workdir');
   }
 
+  private getRepoDir(repo: RepoEntity) {
+    return path.join(this.getWorkdirRoot(), repo.owner, repo.name);
+  }
+
+  private getWorktreeDir(repo: RepoEntity, buildId: number) {
+    return path.join(this.getWorkdirRoot(), '_worktrees', repo.owner, repo.name, String(buildId));
+  }
+
   private async runGit(cwd: string, args: string) {
     const cmd = `git ${args}`;
     this.logger.log(`Running: ${cmd} (cwd=${cwd})`);
@@ -27,9 +35,9 @@ export class BuildPreparationService {
     }
   }
 
-  async prepare(repo: RepoEntity) {
-    const workdirRoot = this.getWorkdirRoot();
-    const repoDir = path.join(workdirRoot, repo.owner, repo.name);
+  async prepare(repo: RepoEntity, ref: string, buildId: number) {
+    const repoDir = this.getRepoDir(repo);
+    const worktreeDir = this.getWorktreeDir(repo, buildId);
 
     // ensure parent exists
     await fs.promises.mkdir(path.dirname(repoDir), { recursive: true });
@@ -39,19 +47,29 @@ export class BuildPreparationService {
       .then(() => true)
       .catch(() => false);
 
+    let cloneOutput: { success: boolean; stdout: string; stderr: string } | null = null;
+    let fetchRes: { success: boolean; stdout: string; stderr: string } | null = null;
+
     if (!exists) {
-      // clone
       this.logger.log(`Clonando ${repo.owner}/${repo.name} em ${repoDir}`);
       const parent = path.dirname(repoDir);
       await fs.promises.mkdir(parent, { recursive: true });
-      const res = await this.runGit(parent, `clone ${repo.cloneUrl} ${repo.name}`);
-      return { repoDir, cloneOutput: res, fetched: false };
+      cloneOutput = await this.runGit(parent, `clone ${repo.cloneUrl} ${repo.name}`);
+    } else {
+      this.logger.log(`Atualizando ${repo.owner}/${repo.name} via git fetch`);
+      fetchRes = await this.runGit(repoDir, 'fetch --all --prune');
     }
 
-    // fetch updates
-    this.logger.log(`Atualizando ${repo.owner}/${repo.name} via git fetch`);
-    const fetchRes = await this.runGit(repoDir, 'fetch --all --prune');
-    return { repoDir, cloneOutput: null, fetched: true, fetchRes };
+    await fs.promises.rm(worktreeDir, { recursive: true, force: true });
+    this.logger.log(`Criando worktree build=${buildId} ref=${ref} em ${worktreeDir}`);
+    let worktreeRes = await this.runGit(repoDir, `worktree add --force "${worktreeDir}" ${ref}`);
+    let worktreeFallbackRes: { success: boolean; stdout: string; stderr: string } | null = null;
+    if (!worktreeRes.success) {
+      worktreeFallbackRes = await this.runGit(repoDir, `worktree add --force "${worktreeDir}" origin/${ref}`);
+      if (worktreeFallbackRes.success) worktreeRes = worktreeFallbackRes;
+    }
+
+    return { repoDir: worktreeDir, baseDir: repoDir, worktreeDir, cloneOutput, fetched: !!fetchRes, fetchRes, worktreeRes, worktreeFallbackRes };
   }
 
   async checkoutRef(repoDir: string, ref: string) {
@@ -60,5 +78,10 @@ export class BuildPreparationService {
 
     const res2 = await this.runGit(repoDir, `checkout --force -B tmp-${Date.now()} origin/${ref}`);
     return res2;
+  }
+
+  async cleanupWorktree(baseDir: string, worktreeDir: string) {
+    await this.runGit(baseDir, `worktree remove --force "${worktreeDir}"`);
+    await fs.promises.rm(worktreeDir, { recursive: true, force: true });
   }
 }

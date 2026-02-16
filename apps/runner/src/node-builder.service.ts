@@ -66,7 +66,7 @@ export class NodeBuilderService {
   }
 
   async build(build: BuildEntity, repoDir: string) {
-    const logger = new BuildLogger(build.id, this.buildRepository, this.logger);
+    const logger = new BuildLogger(build.id, this.buildRepository, build.prNumber, build.ref, this.logger);
     try {
       await logger.log(`Build start id=${build.id} trigger=${build.trigger} ref=${build.ref}`);
       const packageJsonPath = path.join(repoDir, 'package.json');

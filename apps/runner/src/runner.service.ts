@@ -85,42 +85,59 @@ export class RunnerService implements OnModuleInit {
       return;
     }
 
-    const logger = new BuildLogger(build.id, this.buildRepository, this.logger);
+    const logger = new BuildLogger(build.id, this.buildRepository, build.prNumber, build.ref, this.logger);
+    const ref = build.trigger === BuildTrigger.MANUAL ? repo.defaultBranch : build.commitSha ?? repo.defaultBranch;
+    let prepared: {
+      repoDir: string;
+      baseDir: string;
+      worktreeDir: string;
+      cloneOutput: any;
+      fetchRes: any;
+      worktreeRes: { success: boolean; stdout: string; stderr: string };
+      worktreeFallbackRes: { success: boolean; stdout: string; stderr: string } | null;
+    } | null = null;
 
     try {
       await logger.log(`Buscando repositorio ${repo.owner}/${repo.name}`);
-      const ensured = await this.buildPreparation.prepare(repo);
-      if (ensured.cloneOutput) {
-        await logger.log(`--- git clone output ---\n${JSON.stringify(ensured.cloneOutput, null, 2)}`);
-      } else if (ensured.fetchRes) {
-        await logger.log(`--- git fetch output ---\n${JSON.stringify(ensured.fetchRes, null, 2)}`);
+      prepared = await this.buildPreparation.prepare(repo, ref, build.id);
+      if (prepared.cloneOutput) {
+        await logger.log(`--- git clone output ---\n${JSON.stringify(prepared.cloneOutput, null, 2)}`);
+      } else if (prepared.fetchRes) {
+        await logger.log(`--- git fetch output ---\n${JSON.stringify(prepared.fetchRes, null, 2)}`);
       }
 
-      const ref = build.trigger === BuildTrigger.MANUAL ? repo.defaultBranch : build.commitSha ?? repo.defaultBranch;
-      await logger.log(`Checkout ref ${ref}`);
-
-      const checkoutRes = await this.buildPreparation.checkoutRef(ensured.repoDir, ref);
-      if (!checkoutRes.success) {
-        await logger.log(`--- git checkout failed ---\n${checkoutRes.stderr}`);
+      if (!prepared.worktreeRes.success) {
+        await logger.log(`--- git worktree failed ---\n${prepared.worktreeRes.stderr}`);
         await this.buildRepository.update(build.id, { status: BuildStatus.FAILED });
-        this.logger.error(`Build ${build.id} failed during checkout`);
+        this.logger.error(`Build ${build.id} failed during worktree creation`);
         return;
       }
 
-      await logger.log(`--- git checkout output ---\n${checkoutRes.stdout}${checkoutRes.stderr}`);
+      if (prepared.worktreeFallbackRes && prepared.worktreeFallbackRes.success) {
+        await logger.log(`--- git worktree fallback output ---\n${prepared.worktreeFallbackRes.stdout}${prepared.worktreeFallbackRes.stderr}`);
+      } else {
+        await logger.log(`--- git worktree output ---\n${prepared.worktreeRes.stdout}${prepared.worktreeRes.stderr}`);
+      }
 
-      // At this stage clone/fetch/checkout succeeded. Keep RUNNING for pipeline steps.
-      await logger.log(`Repo pronto em ${ensured.repoDir}`);
+      await logger.log(`Repo pronto em ${prepared.repoDir}`);
 
-      this.logger.log(`Build ${build.id} repo ready at ${ensured.repoDir}`);
-      // run build pipeline (install, build, compile, nexe, artifact)
+      this.logger.log(`Build ${build.id} repo ready at ${prepared.repoDir}`);
       await logger.log('Iniciando pipeline de build');
-      await this.nodeBuilder.build(build, ensured.repoDir);
+      await this.nodeBuilder.build(build, prepared.repoDir);
     } catch (err: any) {
       const message = err?.message ?? String(err);
       await logger.error(`--- runner error ---\n${message}`);
       await this.buildRepository.update(build.id, { status: BuildStatus.FAILED });
       this.logger.error(`Build ${build.id} failed: ${message}`);
+    } finally {
+      if (prepared?.baseDir && prepared?.worktreeDir) {
+        try {
+          await this.buildPreparation.cleanupWorktree(prepared.baseDir, prepared.worktreeDir);
+          await logger.log(`Worktree removido ${prepared.worktreeDir}`);
+        } catch (err: any) {
+          await logger.error(`Falha ao remover worktree: ${err?.message ?? String(err)}`);
+        }
+      }
     }
   }
 }

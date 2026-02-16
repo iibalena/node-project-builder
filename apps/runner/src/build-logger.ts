@@ -3,11 +3,17 @@ import { Repository } from 'typeorm';
 import { BuildEntity } from '@shared/db/entities/build.entity';
 
 export class BuildLogger {
+  private refLabel: string;
+
   constructor(
     private buildId: number,
     private buildRepository: Repository<BuildEntity>,
+    prNumber: number | null,
+    ref: string,
     private consoleLogger?: Logger,
-  ) {}
+  ) {
+    this.refLabel = prNumber != null ? `PR#${prNumber}` : ref;
+  }
 
   private async write(entry: string, level: 'log' | 'error' = 'log') {
     const current = await this.read();
@@ -28,13 +34,13 @@ export class BuildLogger {
 
   async log(message: string) {
     const now = new Date().toISOString();
-    const entry = `[${now}] [build:${this.buildId}] ${message}`;
+    const entry = `[${now}] [build:${this.buildId}] [${this.refLabel}] ${message}`;
     await this.write(entry, 'log');
   }
 
   async error(message: string) {
     const now = new Date().toISOString();
-    const entry = `[${now}] [build:${this.buildId}] ERROR: ${message}`;
+    const entry = `[${now}] [build:${this.buildId}] [${this.refLabel}] ERROR: ${message}`;
     await this.write(entry, 'error');
   }
 
