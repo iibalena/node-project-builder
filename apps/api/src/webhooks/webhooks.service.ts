@@ -4,7 +4,11 @@ import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RepoEntity } from '@shared/db/entities/repo.entity';
-import { BuildEntity, BuildStatus, BuildTrigger } from '@shared/db/entities/build.entity';
+import {
+  BuildEntity,
+  BuildStatus,
+  BuildTrigger,
+} from '@shared/db/entities/build.entity';
 import { BuildRefStateEntity } from '@shared/db/entities/build-ref-state.entity';
 
 type GithubHeaders = {
@@ -99,7 +103,9 @@ export class WebhooksService {
   }): Promise<{ ok: true; ignored?: boolean }> {
     const ok = this.verifyGithubSignature(args.rawBody, args.headers);
     if (!ok) {
-      this.logger.warn('Webhook signature verification failed — ignoring delivery');
+      this.logger.error(
+        'Falha na validacao da assinatura do webhook (token/segredo invalido) — entrega ignorada',
+      );
       return { ok: true, ignored: true };
     }
 
@@ -113,7 +119,9 @@ export class WebhooksService {
     const repoName = args.payload?.repository?.name ?? null;
 
     if (!repoOwner || !repoName) {
-      this.logger.warn('Webhook payload missing repository owner/name — ignoring');
+      this.logger.warn(
+        'Payload do webhook sem owner/name do repositorio — ignorando',
+      );
       return { ok: true, ignored: true };
     }
 
@@ -122,14 +130,16 @@ export class WebhooksService {
     });
 
     if (!repo) {
-      this.logger.debug(`Repository ${repoOwner}/${repoName} not tracked or inactive — ignoring`);
+      this.logger.debug(
+        `Repositorio ${repoOwner}/${repoName} nao monitorado ou inativo — ignorando`,
+      );
       return { ok: true, ignored: true };
     }
 
     // PR -> exe build
     if (event === 'pull_request') {
       const action = args.payload?.action;
-      this.logger.log(`pull_request event action=${action}`);
+      this.logger.log(`Evento pull_request recebido action=${action}`);
       if (!['opened', 'reopened', 'synchronize'].includes(action)) {
         return { ok: true, ignored: true };
       }
@@ -139,7 +149,9 @@ export class WebhooksService {
       const prNumber = args.payload?.pull_request?.number;
 
       if (!sha || !ref || !prNumber) {
-        this.logger.warn('pull_request payload missing sha/ref/number — ignoring');
+        this.logger.warn(
+          'Payload de pull_request sem sha/ref/number — ignorando',
+        );
         return { ok: true, ignored: true };
       }
 
@@ -149,7 +161,9 @@ export class WebhooksService {
         return { ok: true, ignored: true };
       }
       if (this.shouldCooldown(state)) {
-        this.logger.log(`Cooldown active for ${repoOwner}/${repoName} pr=${prNumber} (skipping)`);
+        this.logger.log(
+          `Cooldown ativo para ${repoOwner}/${repoName} pr=${prNumber} (ignorando)`,
+        );
         return { ok: true, ignored: true };
       }
 
@@ -173,14 +187,16 @@ export class WebhooksService {
         enqueuedAt: new Date(),
       });
 
-      this.logger.log(`Enqueued PR build for ${repoOwner}/${repoName} pr=${prNumber} sha=${sha}`);
+      this.logger.log(
+        `Build de PR enfileirado para ${repoOwner}/${repoName} pr=${prNumber} sha=${sha}`,
+      );
 
       return { ok: true };
     }
 
     // Merge / push -> build
     if (event === 'push') {
-      this.logger.log('push event received');
+      this.logger.log('Evento push recebido');
       const refFull = args.payload?.ref; // ex: refs/heads/main
       const sha = args.payload?.after;
 
@@ -190,7 +206,9 @@ export class WebhooksService {
 
       // Opcional: só enfileirar para a branch default do repo
       if (ref !== repo.defaultBranch) {
-        this.logger.debug(`Push to ${ref} ignored (defaultBranch=${repo.defaultBranch})`);
+        this.logger.debug(
+          `Push para ${ref} ignorado (defaultBranch=${repo.defaultBranch})`,
+        );
         return { ok: true, ignored: true };
       }
 
@@ -200,7 +218,9 @@ export class WebhooksService {
         return { ok: true, ignored: true };
       }
       if (this.shouldCooldown(state)) {
-        this.logger.log(`Cooldown active for ${repoOwner}/${repoName} ref=${ref} (skipping)`);
+        this.logger.log(
+          `Cooldown ativo para ${repoOwner}/${repoName} ref=${ref} (ignorando)`,
+        );
         return { ok: true, ignored: true };
       }
 
@@ -224,7 +244,9 @@ export class WebhooksService {
         enqueuedAt: new Date(),
       });
 
-      this.logger.log(`Enqueued push build for ${repoOwner}/${repoName} ref=${ref} sha=${sha}`);
+      this.logger.log(
+        `Build de push enfileirado para ${repoOwner}/${repoName} ref=${ref} sha=${sha}`,
+      );
 
       return { ok: true };
     }

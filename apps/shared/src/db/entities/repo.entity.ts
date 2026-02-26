@@ -14,13 +14,23 @@ export class RepoEntity extends BaseEntity {
   @Column({ name: 'clone_url', type: 'text' })
   cloneUrl: string;
 
-  @Column({  name: 'default_branch', type: 'varchar', length: 200, default: 'main' })
+  @Column({
+    name: 'default_branch',
+    type: 'varchar',
+    length: 200,
+    default: 'master',
+  })
   defaultBranch: string;
 
-  @Column({  name: 'is_active', type: 'boolean', default: true })
+  @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
-  @Column({ name: 'install_command', type: 'varchar', length: 200, nullable: true })
+  @Column({
+    name: 'install_command',
+    type: 'varchar',
+    length: 200,
+    nullable: true,
+  })
   installCommand: string | null;
 
   @Column({ name: 'use_legacy_peer_deps', type: 'boolean', default: false })

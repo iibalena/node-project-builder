@@ -15,7 +15,7 @@ export class WebhooksController {
     const payload = req.body;
     const delivery = String(req.headers['x-github-delivery'] ?? '');
     const event = String(req.headers['x-github-event'] ?? '');
-    this.logger.log(`Incoming webhook delivery=${delivery} event=${event}`);
+    this.logger.log(`Webhook recebido delivery=${delivery} event=${event}`);
 
     await this.webhooksService.handleGithubEvent({
       rawBody,
@@ -27,7 +27,7 @@ export class WebhooksController {
       payload,
     });
 
-    this.logger.log(`Webhook ${delivery} processed (returned 200)`);
+    this.logger.log(`Webhook ${delivery} processado (retorno 200)`);
 
     // sempre 200 pro GitHub não ficar retryando por motivo bobo
     return { ok: true };

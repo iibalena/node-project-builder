@@ -21,8 +21,8 @@ export class GitHubRepoService {
       path,
       headers: {
         'User-Agent': 'node-project-builder',
-        'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
         'X-GitHub-Api-Version': '2022-11-28',
       },
     };
@@ -51,8 +51,13 @@ export class GitHubRepoService {
     });
   }
 
-  async getRepoInfo(owner: string, repo: string): Promise<{ default_branch: string }> {
-    const data = await this.requestJson<{ default_branch?: string }>(`/repos/${owner}/${repo}`);
-    return { default_branch: data?.default_branch ?? 'main' };
+  async getRepoInfo(
+    owner: string,
+    repo: string,
+  ): Promise<{ default_branch: string }> {
+    const data = await this.requestJson<{ default_branch?: string }>(
+      `/repos/${owner}/${repo}`,
+    );
+    return { default_branch: data?.default_branch ?? 'master' };
   }
 }

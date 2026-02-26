@@ -2,7 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, IsNull } from 'typeorm';
 import { RepoEntity } from '@shared/db/entities/repo.entity';
-import { BuildEntity, BuildStatus, BuildTrigger } from '@shared/db/entities/build.entity';
+import {
+  BuildEntity,
+  BuildStatus,
+  BuildTrigger,
+} from '@shared/db/entities/build.entity';
 import { BuildRefStateEntity } from '@shared/db/entities/build-ref-state.entity';
 import { GitHubService } from './github.service';
 import * as fs from 'fs';
@@ -92,7 +96,7 @@ export class BuildSyncService {
     );
     if (args.force) {
       this.logger.log(
-        `Build force enabled for ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`,
+        `Build com forca habilitada para ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`,
       );
     }
     const refKey = this.buildRefKey(args.ref, args.prNumber);
@@ -110,17 +114,23 @@ export class BuildSyncService {
       });
 
       if (hasSuccess) {
-        this.logger.log(`Build skip (same SHA, already SUCCESS) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`);
+        this.logger.log(
+          `Build ignorado (mesmo SHA, ja em SUCCESS) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`,
+        );
         return false;
       }
 
-      this.logger.log(`Build retry (same SHA, last not successful) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`);
+      this.logger.log(
+        `Build reprocessado (mesmo SHA, ultima execucao sem sucesso) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`,
+      );
     }
 
     if (!args.force && !args.ignoreCooldown && state?.lastEnqueuedAt) {
       const elapsed = Date.now() - state.lastEnqueuedAt.getTime();
       if (elapsed < this.getCooldownMs()) {
-        this.logger.log(`Build skip (cooldown) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`);
+        this.logger.log(
+          `Build ignorado (cooldown) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`,
+        );
         return false;
       }
     }
@@ -129,7 +139,7 @@ export class BuildSyncService {
       const queued = await this.hasActiveBuild(args.repo.id, args.sha);
       if (queued) {
         this.logger.log(
-          `Build skip (active build) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'} buildId=${queued.id}`,
+          `Build ignorado (build ativo) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'} buildId=${queued.id}`,
         );
         return false;
       }
@@ -147,7 +157,7 @@ export class BuildSyncService {
     );
 
     this.logger.log(
-      `Build enqueued ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'} buildId=${createdBuild.id}`,
+      `Build enfileirado ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'} buildId=${createdBuild.id}`,
     );
 
     await this.upsertRefState({
@@ -162,7 +172,10 @@ export class BuildSyncService {
     return true;
   }
 
-  private async cleanupClosedPrExecutables(repo: RepoEntity, openPrs: Set<number>) {
+  private async cleanupClosedPrExecutables(
+    repo: RepoEntity,
+    openPrs: Set<number>,
+  ) {
     const baseDir = this.getExecutablesDir();
     if (!baseDir) return;
 
@@ -184,7 +197,7 @@ export class BuildSyncService {
 
       const fullPath = path.join(repoDir, entry.name);
       await fs.promises.rm(fullPath, { recursive: true, force: true });
-      this.logger.log(`Removed closed PR folder ${fullPath}`);
+      this.logger.log(`Pasta de PR fechado removida ${fullPath}`);
     }
   }
 
@@ -194,18 +207,24 @@ export class BuildSyncService {
     try {
       openPrs = await this.github.listOpenPulls(repo.owner, repo.name);
     } catch (err: any) {
-      this.logger.error(`Failed to list PRs for ${repo.owner}/${repo.name}: ${err?.message ?? String(err)}`);
+      this.logger.error(
+        `Falha ao listar PRs de ${repo.owner}/${repo.name}: ${err?.message ?? String(err)}`,
+      );
       return;
     }
 
-    this.logger.log(`Encontrados ${openPrs.length} PRs abertos em ${repo.owner}/${repo.name}`);
+    this.logger.log(
+      `Encontrados ${openPrs.length} PRs abertos em ${repo.owner}/${repo.name}`,
+    );
 
     const openPrNumbers = new Set(openPrs.map((p) => p.number));
     await this.cleanupClosedPrExecutables(repo, openPrNumbers);
 
     for (const pr of openPrs) {
       if (!pr.sha || !pr.ref) continue;
-      this.logger.log(`Analisando PR ${repo.owner}/${repo.name} pr=${pr.number} ref=${pr.ref}`);
+      this.logger.log(
+        `Analisando PR ${repo.owner}/${repo.name} pr=${pr.number} ref=${pr.ref}`,
+      );
       const created = await this.enqueueBuild({
         repo,
         trigger: BuildTrigger.PR,
@@ -216,13 +235,21 @@ export class BuildSyncService {
       });
 
       if (created) {
-        this.logger.log(`Enqueued PR build for ${repo.owner}/${repo.name} pr=${pr.number}`);
+        this.logger.log(
+          `Build de PR enfileirado para ${repo.owner}/${repo.name} pr=${pr.number}`,
+        );
       }
     }
 
     try {
-      this.logger.log(`Buscando branch ${repo.defaultBranch} em ${repo.owner}/${repo.name}`);
-      const sha = await this.github.getBranchSha(repo.owner, repo.name, repo.defaultBranch);
+      this.logger.log(
+        `Buscando branch ${repo.defaultBranch} em ${repo.owner}/${repo.name}`,
+      );
+      const sha = await this.github.getBranchSha(
+        repo.owner,
+        repo.name,
+        repo.defaultBranch,
+      );
       if (sha) {
         const created = await this.enqueueBuild({
           repo,
@@ -234,11 +261,15 @@ export class BuildSyncService {
         });
 
         if (created) {
-          this.logger.log(`Enqueued branch build for ${repo.owner}/${repo.name} ref=${repo.defaultBranch}`);
+          this.logger.log(
+            `Build de branch enfileirado para ${repo.owner}/${repo.name} ref=${repo.defaultBranch}`,
+          );
         }
       }
     } catch (err: any) {
-      this.logger.error(`Failed to read branch ${repo.defaultBranch} for ${repo.owner}/${repo.name}: ${err?.message ?? String(err)}`);
+      this.logger.error(
+        `Falha ao ler branch ${repo.defaultBranch} para ${repo.owner}/${repo.name}: ${err?.message ?? String(err)}`,
+      );
     }
   }
 
@@ -254,9 +285,14 @@ export class BuildSyncService {
     if (args.prNumber) {
       let openPrs: { number: number; sha: string; ref: string }[] = [];
       try {
-        openPrs = await this.github.listOpenPulls(args.repo.owner, args.repo.name);
+        openPrs = await this.github.listOpenPulls(
+          args.repo.owner,
+          args.repo.name,
+        );
       } catch (err: any) {
-        this.logger.error(`Failed to list PRs for ${args.repo.owner}/${args.repo.name}: ${err?.message ?? String(err)}`);
+        this.logger.error(
+          `Falha ao listar PRs de ${args.repo.owner}/${args.repo.name}: ${err?.message ?? String(err)}`,
+        );
         return { ok: false, message: 'failed_to_list_prs' };
       }
 
@@ -279,10 +315,16 @@ export class BuildSyncService {
 
     const ref = args.ref?.trim() || args.repo.defaultBranch;
     if (!args.ref) {
-      this.logger.log(`Sync manual sem PR informado. Usando branch ${ref} em ${args.repo.owner}/${args.repo.name}`);
+      this.logger.log(
+        `Sync manual sem PR informado. Usando branch ${ref} em ${args.repo.owner}/${args.repo.name}`,
+      );
     }
     try {
-      const sha = await this.github.getBranchSha(args.repo.owner, args.repo.name, ref);
+      const sha = await this.github.getBranchSha(
+        args.repo.owner,
+        args.repo.name,
+        ref,
+      );
       if (!sha) return { ok: false, message: 'sha_not_found' };
 
       const created = await this.enqueueBuild({
@@ -296,14 +338,16 @@ export class BuildSyncService {
 
       return { ok: true, enqueued: created, ref, sha };
     } catch (err: any) {
-      this.logger.error(`Failed to read branch ${ref} for ${args.repo.owner}/${args.repo.name}: ${err?.message ?? String(err)}`);
+      this.logger.error(
+        `Falha ao ler branch ${ref} para ${args.repo.owner}/${args.repo.name}: ${err?.message ?? String(err)}`,
+      );
       return { ok: false, message: 'branch_read_failed' };
     }
   }
 
   async syncAll(options?: { ignoreCooldown?: boolean }) {
     if (!process.env.GITHUB_TOKEN) {
-      this.logger.warn('GITHUB_TOKEN not set. Skipping sync.');
+      this.logger.error('GITHUB_TOKEN nao configurado. Sync ignorado.');
       return;
     }
 
@@ -311,11 +355,11 @@ export class BuildSyncService {
     const repos = await this.repoRepository.find({ where: { isActive: true } });
     if (repos.length === 0) return;
 
-    this.logger.log(`Sync start: ${repos.length} repos`);
+    this.logger.log(`Inicio do sync: ${repos.length} repositorios`);
     for (const repo of repos) {
       this.logger.log(`Encontrado repo ${repo.owner}/${repo.name}`);
       await this.syncRepo(repo, options);
     }
-    this.logger.log('Sync done.');
+    this.logger.log('Sync finalizado.');
   }
 }
