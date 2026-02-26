@@ -21,8 +21,8 @@ export class GitHubService {
       path,
       headers: {
         'User-Agent': 'node-project-builder',
-        'Accept': 'application/vnd.github+json',
-        'Authorization': `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
         'X-GitHub-Api-Version': '2022-11-28',
       },
     };
@@ -65,11 +65,17 @@ export class GitHubService {
     }
 
     this.logger.log(`Fetched ${pulls.length} open PRs for ${owner}/${repo}`);
-    return pulls.map((p) => ({ number: p.number, sha: p.head?.sha ?? '', ref: p.head?.ref ?? '' }));
+    return pulls.map((p) => ({
+      number: p.number,
+      sha: p.head?.sha ?? '',
+      ref: p.head?.ref ?? '',
+    }));
   }
 
   async getBranchSha(owner: string, repo: string, branch: string) {
-    const data = await this.requestJson<{ sha?: string }>(`/repos/${owner}/${repo}/commits/${branch}`);
+    const data = await this.requestJson<{ sha?: string }>(
+      `/repos/${owner}/${repo}/commits/${branch}`,
+    );
     return data?.sha ?? '';
   }
 }

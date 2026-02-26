@@ -7,7 +7,9 @@ import { WebhooksController } from './webhooks.controller';
 import { WebhooksService } from './webhooks.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([RepoEntity, BuildEntity, BuildRefStateEntity])],
+  imports: [
+    TypeOrmModule.forFeature([RepoEntity, BuildEntity, BuildRefStateEntity]),
+  ],
   controllers: [WebhooksController],
   providers: [WebhooksService],
 })

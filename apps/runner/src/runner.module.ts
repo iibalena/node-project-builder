@@ -13,7 +13,6 @@ import { RepoEntity } from '@shared/db/entities/repo.entity';
 import { BuildRefStateEntity } from '@shared/db/entities/build-ref-state.entity';
 import { SyncController } from './sync.controller';
 
-
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),

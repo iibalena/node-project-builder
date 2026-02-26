@@ -8,7 +8,12 @@ export class SyncService {
     return (process.env.RUNNER_URL ?? '').trim();
   }
 
-  async syncNow(body: { repoId: number; prNumber?: number; ref?: string; force?: boolean }) {
+  async syncNow(body: {
+    repoId: number;
+    prNumber?: number;
+    ref?: string;
+    force?: boolean;
+  }) {
     const baseUrl = this.getRunnerUrl();
     if (!baseUrl) {
       return { ok: false, message: 'RUNNER_URL not set' };
