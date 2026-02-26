@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BuildEntity } from '@shared/db/entities/build.entity';
+import { ListBuildsDto } from './dto/list-builds.dto';
 
 @Injectable()
 export class BuildsService {
@@ -10,7 +11,7 @@ export class BuildsService {
     private readonly buildRepository: Repository<BuildEntity>,
   ) {}
 
-  async list(args: { repoId?: number; status?: string }) {
+  async list(args: ListBuildsDto) {
     const qb = this.buildRepository
       .createQueryBuilder('b')
       .orderBy('b.createdAt', 'DESC')

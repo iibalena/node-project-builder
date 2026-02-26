@@ -1,32 +1,17 @@
-import { BadRequestException, Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post } from '@nestjs/common';
 import { SyncService } from './sync.service';
+import { SyncNowDto } from './dto/sync-now.dto';
 
 @Controller('sync')
 export class SyncController {
   constructor(private readonly syncService: SyncService) {}
 
   @Post('now')
-  async syncNow(
-    @Body()
-    body: {
-      repoId: number;
-      prNumber?: number;
-      pr?: number;
-      ref?: string;
-      force?: boolean;
-    },
-  ) {
-    const repoId = Number(body.repoId);
-    const prRaw = body.prNumber !== undefined ? body.prNumber : body.pr;
-    const prNumber = prRaw !== undefined ? Number(prRaw) : undefined;
-
-    if (!Number.isFinite(repoId)) {
-      throw new BadRequestException('repoId must be a number');
-    }
-
+  async syncNow(@Body() body: SyncNowDto) {
+    const prNumber = body.prNumber ?? body.pr;
     return this.syncService.syncNow({
-      repoId,
-      prNumber: Number.isFinite(prNumber) ? prNumber : undefined,
+      repoId: body.repoId,
+      prNumber,
       ref: body.ref,
       force: body.force === true,
     });
