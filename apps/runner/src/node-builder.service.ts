@@ -19,20 +19,42 @@ export class NodeBuilderService {
     private readonly buildRepository: Repository<BuildEntity>,
   ) {}
 
-  private async findExe(root: string, depth = 4): Promise<string | null> {
-    const entries = await fs.promises.readdir(root, { withFileTypes: true });
-    for (const e of entries) {
-      const p = path.join(root, e.name);
-      if (e.isFile() && p.toLowerCase().endsWith('.exe')) return p;
+  private parseOutputFromScript(script: string): string | null {
+    const quoted = script.match(/(?:--output|-o)\s+["']([^"']+\.exe)["']/i);
+    if (quoted?.[1]) return quoted[1];
+
+    const plain = script.match(/(?:--output|-o)\s+([^\s"']+\.exe)/i);
+    if (plain?.[1]) return plain[1];
+
+    return null;
+  }
+
+  private async findConfiguredExePath(repoDir: string, pkg: any): Promise<string | null> {
+    const candidates: string[] = [];
+
+    const nexeOutput = pkg?.config?.nexe?.output;
+    if (typeof nexeOutput === 'string' && nexeOutput.trim().toLowerCase().endsWith('.exe')) {
+      candidates.push(path.resolve(repoDir, nexeOutput.trim()));
     }
-    if (depth <= 0) return null;
-    for (const e of entries) {
-      if (e.isDirectory()) {
-        const p = path.join(root, e.name);
-        const found = await this.findExe(p, depth - 1);
-        if (found) return found;
+
+    const scripts = pkg?.scripts ?? {};
+    const scriptName = scripts['nexe:win'] ? 'nexe:win' : scripts['nexe'] ? 'nexe' : null;
+    if (scriptName) {
+      const scriptValue = String(scripts[scriptName] ?? '');
+      const outputFromScript = this.parseOutputFromScript(scriptValue);
+      if (outputFromScript) {
+        candidates.push(path.resolve(repoDir, outputFromScript));
       }
     }
+
+    for (const exePath of candidates) {
+      const exists = await fs.promises
+        .access(exePath)
+        .then(() => true)
+        .catch(() => false);
+      if (exists) return exePath;
+    }
+
     return null;
   }
 
@@ -150,8 +172,26 @@ export class NodeBuilderService {
       }
 
       const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-      const exePath = await this.findExe(repoDir, 5);
-      if (!exePath) throw new Error('Executable (.exe) not found after build');
+
+      const hasNexe = pkg.scripts && (pkg.scripts['nexe:win'] || pkg.scripts['nexe']);
+      if (hasNexe) {
+        const scriptName = pkg.scripts['nexe:win'] ? 'nexe:win' : 'nexe';
+        const nexeCmd = usePnpm ? `pnpm run ${scriptName}` : `npm run ${scriptName}`;
+        await logger.log(`Executando ${scriptName}: ${nexeCmd}`);
+        await exec(nexeCmd, { cwd: repoDir, maxBuffer: 50 * 1024 * 1024 });
+        await logger.log(`${scriptName} finalizado.`);
+      } else {
+        await logger.log('Script nexe nao encontrado no package.json, etapa ignorada.');
+      }
+
+      const exePath = await this.findConfiguredExePath(repoDir, pkg);
+      if (!exePath) {
+        throw new Error(
+          'Executavel nao encontrado no caminho configurado (config.nexe.output ou script nexe/nexe:win com -o/--output).',
+        );
+      }
+
+      await logger.log(`Executavel selecionado: ${exePath}`);
 
       const artifactFileName = this.getVersionedExecutableName(
         exePath,

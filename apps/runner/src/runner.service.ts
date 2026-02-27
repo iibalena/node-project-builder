@@ -18,6 +18,7 @@ export class RunnerService implements OnModuleInit {
   private interval: NodeJS.Timeout;
   private syncInterval: NodeJS.Timeout;
   private syncRunning = false;
+  private buildProcessing = false;
 
   constructor(
     @InjectRepository(BuildEntity)
@@ -71,6 +72,8 @@ export class RunnerService implements OnModuleInit {
   }
 
   async processNextBuild() {
+    if (this.buildProcessing) return;
+
     const build = await this.buildRepository.findOne({
       where: { status: BuildStatus.QUEUED },
       order: { createdAt: 'ASC' },
@@ -79,50 +82,89 @@ export class RunnerService implements OnModuleInit {
 
     if (!build) return;
 
-    this.logger.log(`Build ${build.id} selecionado para processamento`);
+    await this.processBuild(build);
+  }
 
-    build.status = BuildStatus.RUNNING;
-    await this.buildRepository.save(build);
-
-    this.logger.log(`Build ${build.id} marcado como RUNNING`);
-
-    const repo = build.repo;
-    if (!repo) {
-      this.logger.error(
-        `Build ${build.id} sem relacao de repositorio carregada`,
-      );
-      build.status = BuildStatus.FAILED;
-      build.log = `${build.log ?? ''}\nRelacao de repositorio ausente`;
-      await this.buildRepository.save(build);
-      return;
+  async processBuildById(buildId: number) {
+    if (!Number.isFinite(buildId)) {
+      return { ok: false, message: 'build_id_invalido' };
     }
 
-    const logger = new BuildLogger(
-      build.id,
-      this.buildRepository,
-      build.prNumber,
-      build.ref,
-      this.logger,
-    );
-    const ref =
-      build.trigger === BuildTrigger.MANUAL
-        ? repo.defaultBranch
-        : (build.commitSha ?? repo.defaultBranch);
-    let prepared: {
-      repoDir: string;
-      baseDir: string;
-      worktreeDir: string;
-      cloneOutput: any;
-      fetchRes: any;
-      worktreeRes: { success: boolean; stdout: string; stderr: string };
-      worktreeFallbackRes: {
-        success: boolean;
-        stdout: string;
-        stderr: string;
-      } | null;
-    } | null = null;
+    if (this.buildProcessing) {
+      return { ok: false, message: 'runner_ocupado' };
+    }
+
+    const build = await this.buildRepository.findOne({
+      where: { id: buildId },
+      relations: ['repo'],
+    });
+
+    if (!build) {
+      return { ok: false, message: 'build_nao_encontrado' };
+    }
+
+    if (build.status === BuildStatus.RUNNING) {
+      return { ok: false, message: 'build_ja_em_execucao' };
+    }
+
+    if (build.status !== BuildStatus.QUEUED) {
+      build.status = BuildStatus.QUEUED;
+      await this.buildRepository.save(build);
+    }
+
+    await this.processBuild(build);
+    return { ok: true, buildId: build.id };
+  }
+
+  private async processBuild(build: BuildEntity) {
+    this.buildProcessing = true;
 
     try {
+
+      this.logger.log(`Build ${build.id} selecionado para processamento`);
+
+      build.status = BuildStatus.RUNNING;
+      await this.buildRepository.save(build);
+
+      this.logger.log(`Build ${build.id} marcado como RUNNING`);
+
+      const repo = build.repo;
+      if (!repo) {
+        this.logger.error(
+          `Build ${build.id} sem relacao de repositorio carregada`,
+        );
+        build.status = BuildStatus.FAILED;
+        build.log = `${build.log ?? ''}\nRelacao de repositorio ausente`;
+        await this.buildRepository.save(build);
+        return;
+      }
+
+      const logger = new BuildLogger(
+        build.id,
+        this.buildRepository,
+        build.prNumber,
+        build.ref,
+        this.logger,
+      );
+      const ref =
+        build.trigger === BuildTrigger.MANUAL
+          ? repo.defaultBranch
+          : (build.commitSha ?? repo.defaultBranch);
+      let prepared: {
+        repoDir: string;
+        baseDir: string;
+        worktreeDir: string;
+        cloneOutput: any;
+        fetchRes: any;
+        worktreeRes: { success: boolean; stdout: string; stderr: string };
+        worktreeFallbackRes: {
+          success: boolean;
+          stdout: string;
+          stderr: string;
+        } | null;
+      } | null = null;
+
+      try {
       await logger.log(`Buscando repositorio ${repo.owner}/${repo.name}`);
       prepared = await this.buildPreparation.prepare(repo, ref, build.id);
       if (prepared.cloneOutput) {
@@ -166,27 +208,30 @@ export class RunnerService implements OnModuleInit {
       this.logger.log(`Build ${build.id} repo ready at ${prepared.repoDir}`);
       await logger.log('Iniciando pipeline de build');
       await this.nodeBuilder.build(build, prepared.repoDir);
-    } catch (err: any) {
+      } catch (err: any) {
       const message = err?.message ?? String(err);
       await logger.error(`--- runner error ---\n${message}`);
       await this.buildRepository.update(build.id, {
         status: BuildStatus.FAILED,
       });
       this.logger.error(`Build ${build.id} falhou: ${message}`);
-    } finally {
-      if (prepared?.baseDir && prepared?.worktreeDir) {
-        try {
-          await this.buildPreparation.cleanupWorktree(
-            prepared.baseDir,
-            prepared.worktreeDir,
-          );
-          await logger.log(`Worktree removido ${prepared.worktreeDir}`);
-        } catch (err: any) {
-          await logger.error(
-            `Falha ao remover worktree: ${err?.message ?? String(err)}`,
-          );
+      } finally {
+        if (prepared?.baseDir && prepared?.worktreeDir) {
+          try {
+            await this.buildPreparation.cleanupWorktree(
+              prepared.baseDir,
+              prepared.worktreeDir,
+            );
+            await logger.log(`Worktree removido ${prepared.worktreeDir}`);
+          } catch (err: any) {
+            await logger.error(
+              `Falha ao remover worktree: ${err?.message ?? String(err)}`,
+            );
+          }
         }
       }
+    } finally {
+      this.buildProcessing = false;
     }
   }
 }
