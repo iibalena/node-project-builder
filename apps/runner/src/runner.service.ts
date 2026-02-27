@@ -11,6 +11,7 @@ import { BuildLogger } from './build-logger';
 import { BuildPreparationService } from './build-prep.service';
 import { NodeBuilderService } from './node-builder.service';
 import { BuildSyncService } from './build-sync.service';
+import { I18nService } from '@shared/i18n/i18n.service';
 
 @Injectable()
 export class RunnerService implements OnModuleInit {
@@ -26,6 +27,7 @@ export class RunnerService implements OnModuleInit {
     private readonly buildPreparation: BuildPreparationService,
     private readonly nodeBuilder: NodeBuilderService,
     private readonly buildSync: BuildSyncService,
+    private readonly i18n: I18nService,
   ) {}
 
   onModuleInit() {
@@ -34,8 +36,8 @@ export class RunnerService implements OnModuleInit {
       String(process.env.SYNC_ON_START ?? 'true').toLowerCase() !== 'false';
     const syncIntervalMs = Number(process.env.SYNC_INTERVAL_MS ?? 86400000);
 
-    this.logger.log('Runner iniciado. Preparando filas de build.');
-    this.logger.log(`Runner consultando fila a cada ${intervalMs}ms`);
+    this.logger.log(this.i18n.t('runner.started'));
+    this.logger.log(this.i18n.t('runner.polling_interval', { interval: intervalMs }));
 
     this.interval = setInterval(() => {
       this.processNextBuild().catch((err) => this.logger.error(err));
@@ -44,12 +46,10 @@ export class RunnerService implements OnModuleInit {
     if (syncOnStart) {
       if (!process.env.GITHUB_TOKEN) {
         this.logger.error(
-          'Sync inicial habilitado, mas GITHUB_TOKEN nao esta configurado. Pulando sync inicial.',
+          this.i18n.t('runner.sync_start_token_missing'),
         );
       } else {
-        this.logger.log(
-          'Sync inicial habilitado. Executando sync inicial agora.',
-        );
+        this.logger.log(this.i18n.t('runner.sync_start_enabled'));
       }
       this.runSync({ ignoreCooldown: true }).catch((err) =>
         this.logger.error(err),
@@ -87,11 +87,11 @@ export class RunnerService implements OnModuleInit {
 
   async processBuildById(buildId: number) {
     if (!Number.isFinite(buildId)) {
-      return { ok: false, message: 'build_id_invalido' };
+      return { ok: false, message: this.i18n.t('sync.build_id_invalid') };
     }
 
     if (this.buildProcessing) {
-      return { ok: false, message: 'runner_ocupado' };
+      return { ok: false, message: this.i18n.t('sync.runner_busy') };
     }
 
     const build = await this.buildRepository.findOne({
@@ -100,11 +100,11 @@ export class RunnerService implements OnModuleInit {
     });
 
     if (!build) {
-      return { ok: false, message: 'build_nao_encontrado' };
+      return { ok: false, message: this.i18n.t('sync.build_not_found') };
     }
 
     if (build.status === BuildStatus.RUNNING) {
-      return { ok: false, message: 'build_ja_em_execucao' };
+      return { ok: false, message: this.i18n.t('sync.build_already_running') };
     }
 
     if (build.status !== BuildStatus.QUEUED) {
@@ -121,20 +121,20 @@ export class RunnerService implements OnModuleInit {
 
     try {
 
-      this.logger.log(`Build ${build.id} selecionado para processamento`);
+      this.logger.log(this.i18n.t('runner.build_selected', { buildId: build.id }));
 
       build.status = BuildStatus.RUNNING;
       await this.buildRepository.save(build);
 
-      this.logger.log(`Build ${build.id} marcado como RUNNING`);
+      this.logger.log(this.i18n.t('runner.build_marked_running', { buildId: build.id }));
 
       const repo = build.repo;
       if (!repo) {
         this.logger.error(
-          `Build ${build.id} sem relacao de repositorio carregada`,
+          this.i18n.t('runner.build_repo_missing', { buildId: build.id }),
         );
         build.status = BuildStatus.FAILED;
-        build.log = `${build.log ?? ''}\nRelacao de repositorio ausente`;
+        build.log = `${build.log ?? ''}\n${this.i18n.t('runner.build_repo_relation_missing')}`;
         await this.buildRepository.save(build);
         return;
       }
@@ -165,7 +165,12 @@ export class RunnerService implements OnModuleInit {
       } | null = null;
 
       try {
-      await logger.log(`Buscando repositorio ${repo.owner}/${repo.name}`);
+      await logger.log(
+        this.i18n.t('runner.searching_repo', {
+          owner: repo.owner,
+          name: repo.name,
+        }),
+      );
       prepared = await this.buildPreparation.prepare(repo, ref, build.id);
       if (prepared.cloneOutput) {
         await logger.log(
@@ -185,7 +190,7 @@ export class RunnerService implements OnModuleInit {
           status: BuildStatus.FAILED,
         });
         this.logger.error(
-          `Build ${build.id} falhou durante a criacao do worktree`,
+          this.i18n.t('runner.failed_worktree', { buildId: build.id }),
         );
         return;
       }
@@ -203,18 +208,23 @@ export class RunnerService implements OnModuleInit {
         );
       }
 
-      await logger.log(`Repo pronto em ${prepared.repoDir}`);
+      await logger.log(this.i18n.t('runner.repo_ready', { repoDir: prepared.repoDir }));
 
-      this.logger.log(`Build ${build.id} repo ready at ${prepared.repoDir}`);
-      await logger.log('Iniciando pipeline de build');
+      this.logger.log(
+        this.i18n.t('runner.repo_ready_internal', {
+          buildId: build.id,
+          repoDir: prepared.repoDir,
+        }),
+      );
+      await logger.log(this.i18n.t('runner.pipeline_start'));
       await this.nodeBuilder.build(build, prepared.repoDir);
       } catch (err: any) {
       const message = err?.message ?? String(err);
-      await logger.error(`--- runner error ---\n${message}`);
+      await logger.error(this.i18n.t('runner.error_block', { message }));
       await this.buildRepository.update(build.id, {
         status: BuildStatus.FAILED,
       });
-      this.logger.error(`Build ${build.id} falhou: ${message}`);
+      this.logger.error(this.i18n.t('runner.failed', { buildId: build.id, message }));
       } finally {
         if (prepared?.baseDir && prepared?.worktreeDir) {
           try {
@@ -222,10 +232,16 @@ export class RunnerService implements OnModuleInit {
               prepared.baseDir,
               prepared.worktreeDir,
             );
-            await logger.log(`Worktree removido ${prepared.worktreeDir}`);
+            await logger.log(
+              this.i18n.t('runner.worktree_removed', {
+                worktreeDir: prepared.worktreeDir,
+              }),
+            );
           } catch (err: any) {
             await logger.error(
-              `Falha ao remover worktree: ${err?.message ?? String(err)}`,
+              this.i18n.t('runner.worktree_remove_failed', {
+                error: err?.message ?? String(err),
+              }),
             );
           }
         }

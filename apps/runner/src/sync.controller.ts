@@ -10,6 +10,7 @@ import { Repository } from 'typeorm';
 import { RepoEntity } from '@shared/db/entities/repo.entity';
 import { BuildSyncService } from './build-sync.service';
 import { RunnerService } from './runner.service';
+import { I18nService } from '@shared/i18n/i18n.service';
 
 @Controller('sync')
 export class SyncController {
@@ -18,6 +19,7 @@ export class SyncController {
     private readonly repoRepository: Repository<RepoEntity>,
     private readonly buildSync: BuildSyncService,
     private readonly runnerService: RunnerService,
+    private readonly i18n: I18nService,
   ) {}
 
   @Post('now')
@@ -38,7 +40,7 @@ export class SyncController {
 
     const repoId = Number(body.repoId);
     if (!Number.isFinite(repoId)) {
-      throw new BadRequestException('repoId ou buildId deve ser informado');
+      throw new BadRequestException(this.i18n.t('sync.invalid_repo_or_build'));
     }
 
     const repo = await this.repoRepository.findOne({
@@ -46,7 +48,7 @@ export class SyncController {
     });
 
     if (!repo) {
-      throw new NotFoundException('repo_not_found');
+      throw new NotFoundException(this.i18n.t('sync.repo_not_found'));
     }
 
     return this.buildSync.syncSelection({
@@ -69,7 +71,7 @@ export class SyncController {
     });
 
     if (!repo) {
-      throw new NotFoundException('repo_not_found');
+      throw new NotFoundException(this.i18n.t('sync.repo_not_found'));
     }
 
     await this.buildSync.syncRepo(repo, { ignoreCooldown: true });

@@ -11,6 +11,7 @@ import { BuildRefStateEntity } from '@shared/db/entities/build-ref-state.entity'
 import { GitHubService } from './github.service';
 import * as fs from 'fs';
 import * as path from 'path';
+import { I18nService } from '@shared/i18n/i18n.service';
 
 @Injectable()
 export class BuildSyncService {
@@ -24,6 +25,7 @@ export class BuildSyncService {
     @InjectRepository(BuildRefStateEntity)
     private readonly refStateRepository: Repository<BuildRefStateEntity>,
     private readonly github: GitHubService,
+    private readonly i18n: I18nService,
   ) {}
 
   private getExecutablesDir() {
@@ -92,11 +94,22 @@ export class BuildSyncService {
     force?: boolean;
   }) {
     this.logger.log(
-      `Sync avaliando ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'} sha=${args.sha}`,
+      this.i18n.t('build_sync.eval', {
+        owner: args.repo.owner,
+        name: args.repo.name,
+        ref: args.ref,
+        pr: args.prNumber ?? 'branch',
+        sha: args.sha,
+      }),
     );
     if (args.force) {
       this.logger.log(
-        `Build com forca habilitada para ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`,
+        this.i18n.t('build_sync.force', {
+          owner: args.repo.owner,
+          name: args.repo.name,
+          ref: args.ref,
+          pr: args.prNumber ?? 'branch',
+        }),
       );
     }
     const refKey = this.buildRefKey(args.ref, args.prNumber);
@@ -115,13 +128,23 @@ export class BuildSyncService {
 
       if (hasSuccess) {
         this.logger.log(
-          `Build ignorado (mesmo SHA, ja em SUCCESS) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`,
+          this.i18n.t('build_sync.skip_success', {
+            owner: args.repo.owner,
+            name: args.repo.name,
+            ref: args.ref,
+            pr: args.prNumber ?? 'branch',
+          }),
         );
         return false;
       }
 
       this.logger.log(
-        `Build reprocessado (mesmo SHA, ultima execucao sem sucesso) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`,
+        this.i18n.t('build_sync.retry_same_sha', {
+          owner: args.repo.owner,
+          name: args.repo.name,
+          ref: args.ref,
+          pr: args.prNumber ?? 'branch',
+        }),
       );
     }
 
@@ -129,7 +152,12 @@ export class BuildSyncService {
       const elapsed = Date.now() - state.lastEnqueuedAt.getTime();
       if (elapsed < this.getCooldownMs()) {
         this.logger.log(
-          `Build ignorado (cooldown) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'}`,
+          this.i18n.t('build_sync.skip_cooldown', {
+            owner: args.repo.owner,
+            name: args.repo.name,
+            ref: args.ref,
+            pr: args.prNumber ?? 'branch',
+          }),
         );
         return false;
       }
@@ -139,7 +167,13 @@ export class BuildSyncService {
       const queued = await this.hasActiveBuild(args.repo.id, args.sha);
       if (queued) {
         this.logger.log(
-          `Build ignorado (build ativo) ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'} buildId=${queued.id}`,
+          this.i18n.t('build_sync.skip_active', {
+            owner: args.repo.owner,
+            name: args.repo.name,
+            ref: args.ref,
+            pr: args.prNumber ?? 'branch',
+            buildId: queued.id,
+          }),
         );
         return false;
       }
@@ -157,7 +191,13 @@ export class BuildSyncService {
     );
 
     this.logger.log(
-      `Build enfileirado ${args.repo.owner}/${args.repo.name} ref=${args.ref} pr=${args.prNumber ?? 'branch'} buildId=${createdBuild.id}`,
+      this.i18n.t('build_sync.enqueued', {
+        owner: args.repo.owner,
+        name: args.repo.name,
+        ref: args.ref,
+        pr: args.prNumber ?? 'branch',
+        buildId: createdBuild.id,
+      }),
     );
 
     await this.upsertRefState({
@@ -197,24 +237,37 @@ export class BuildSyncService {
 
       const fullPath = path.join(repoDir, entry.name);
       await fs.promises.rm(fullPath, { recursive: true, force: true });
-      this.logger.log(`Pasta de PR fechado removida ${fullPath}`);
+      this.logger.log(this.i18n.t('build_sync.closed_pr_removed', { path: fullPath }));
     }
   }
 
   async syncRepo(repo: RepoEntity, options?: { ignoreCooldown?: boolean }) {
-    this.logger.log(`Buscando PRs abertos para ${repo.owner}/${repo.name}`);
+    this.logger.log(
+      this.i18n.t('build_sync.fetch_open_prs', {
+        owner: repo.owner,
+        name: repo.name,
+      }),
+    );
     let openPrs: { number: number; sha: string; ref: string }[] = [];
     try {
       openPrs = await this.github.listOpenPulls(repo.owner, repo.name);
     } catch (err: any) {
       this.logger.error(
-        `Falha ao listar PRs de ${repo.owner}/${repo.name}: ${err?.message ?? String(err)}`,
+        this.i18n.t('build_sync.fetch_open_prs_failed', {
+          owner: repo.owner,
+          name: repo.name,
+          error: err?.message ?? String(err),
+        }),
       );
       return;
     }
 
     this.logger.log(
-      `Encontrados ${openPrs.length} PRs abertos em ${repo.owner}/${repo.name}`,
+      this.i18n.t('build_sync.open_prs_found', {
+        count: openPrs.length,
+        owner: repo.owner,
+        name: repo.name,
+      }),
     );
 
     const openPrNumbers = new Set(openPrs.map((p) => p.number));
@@ -223,7 +276,12 @@ export class BuildSyncService {
     for (const pr of openPrs) {
       if (!pr.sha || !pr.ref) continue;
       this.logger.log(
-        `Analisando PR ${repo.owner}/${repo.name} pr=${pr.number} ref=${pr.ref}`,
+        this.i18n.t('build_sync.analyze_pr', {
+          owner: repo.owner,
+          name: repo.name,
+          pr: pr.number,
+          ref: pr.ref,
+        }),
       );
       const created = await this.enqueueBuild({
         repo,
@@ -236,14 +294,22 @@ export class BuildSyncService {
 
       if (created) {
         this.logger.log(
-          `Build de PR enfileirado para ${repo.owner}/${repo.name} pr=${pr.number}`,
+          this.i18n.t('build_sync.pr_enqueued', {
+            owner: repo.owner,
+            name: repo.name,
+            pr: pr.number,
+          }),
         );
       }
     }
 
     try {
       this.logger.log(
-        `Buscando branch ${repo.defaultBranch} em ${repo.owner}/${repo.name}`,
+        this.i18n.t('build_sync.fetch_branch', {
+          branch: repo.defaultBranch,
+          owner: repo.owner,
+          name: repo.name,
+        }),
       );
       const sha = await this.github.getBranchSha(
         repo.owner,
@@ -262,13 +328,22 @@ export class BuildSyncService {
 
         if (created) {
           this.logger.log(
-            `Build de branch enfileirado para ${repo.owner}/${repo.name} ref=${repo.defaultBranch}`,
+            this.i18n.t('build_sync.branch_enqueued', {
+              owner: repo.owner,
+              name: repo.name,
+              branch: repo.defaultBranch,
+            }),
           );
         }
       }
     } catch (err: any) {
       this.logger.error(
-        `Falha ao ler branch ${repo.defaultBranch} para ${repo.owner}/${repo.name}: ${err?.message ?? String(err)}`,
+        this.i18n.t('build_sync.branch_read_failed', {
+          branch: repo.defaultBranch,
+          owner: repo.owner,
+          name: repo.name,
+          error: err?.message ?? String(err),
+        }),
       );
     }
   }
@@ -280,7 +355,12 @@ export class BuildSyncService {
     force?: boolean;
   }) {
     this.logger.log(
-      `Sync manual ${args.repo.owner}/${args.repo.name} pr=${args.prNumber ?? 'n/a'} ref=${args.ref ?? 'n/a'}`,
+      this.i18n.t('build_sync.manual', {
+        owner: args.repo.owner,
+        name: args.repo.name,
+        pr: args.prNumber ?? 'n/a',
+        ref: args.ref ?? 'n/a',
+      }),
     );
     if (args.prNumber) {
       let openPrs: { number: number; sha: string; ref: string }[] = [];
@@ -291,14 +371,18 @@ export class BuildSyncService {
         );
       } catch (err: any) {
         this.logger.error(
-          `Falha ao listar PRs de ${args.repo.owner}/${args.repo.name}: ${err?.message ?? String(err)}`,
+          this.i18n.t('build_sync.fetch_open_prs_failed', {
+            owner: args.repo.owner,
+            name: args.repo.name,
+            error: err?.message ?? String(err),
+          }),
         );
-        return { ok: false, message: 'failed_to_list_prs' };
+        return { ok: false, message: this.i18n.t('build_sync.failed_to_list_prs') };
       }
 
       const match = openPrs.find((pr) => pr.number === args.prNumber);
       if (!match?.sha || !match?.ref) {
-        return { ok: false, message: 'pr_not_found' };
+        return { ok: false, message: this.i18n.t('build_sync.pr_not_found') };
       }
 
       const created = await this.enqueueBuild({
@@ -316,7 +400,11 @@ export class BuildSyncService {
     const ref = args.ref?.trim() || args.repo.defaultBranch;
     if (!args.ref) {
       this.logger.log(
-        `Sync manual sem PR informado. Usando branch ${ref} em ${args.repo.owner}/${args.repo.name}`,
+        this.i18n.t('build_sync.manual_default_branch', {
+          branch: ref,
+          owner: args.repo.owner,
+          name: args.repo.name,
+        }),
       );
     }
     try {
@@ -325,7 +413,9 @@ export class BuildSyncService {
         args.repo.name,
         ref,
       );
-      if (!sha) return { ok: false, message: 'sha_not_found' };
+      if (!sha) {
+        return { ok: false, message: this.i18n.t('build_sync.sha_not_found') };
+      }
 
       const created = await this.enqueueBuild({
         repo: args.repo,
@@ -339,27 +429,37 @@ export class BuildSyncService {
       return { ok: true, enqueued: created, ref, sha };
     } catch (err: any) {
       this.logger.error(
-        `Falha ao ler branch ${ref} para ${args.repo.owner}/${args.repo.name}: ${err?.message ?? String(err)}`,
+        this.i18n.t('build_sync.branch_read_failed', {
+          branch: ref,
+          owner: args.repo.owner,
+          name: args.repo.name,
+          error: err?.message ?? String(err),
+        }),
       );
-      return { ok: false, message: 'branch_read_failed' };
+      return { ok: false, message: this.i18n.t('build_sync.branch_read_failed_code') };
     }
   }
 
   async syncAll(options?: { ignoreCooldown?: boolean }) {
     if (!process.env.GITHUB_TOKEN) {
-      this.logger.error('GITHUB_TOKEN nao configurado. Sync ignorado.');
+      this.logger.error(this.i18n.t('build_sync.sync_skipped_token'));
       return;
     }
 
-    this.logger.log('Buscando repos ativos...');
+    this.logger.log(this.i18n.t('build_sync.search_active_repos'));
     const repos = await this.repoRepository.find({ where: { isActive: true } });
     if (repos.length === 0) return;
 
-    this.logger.log(`Inicio do sync: ${repos.length} repositorios`);
+    this.logger.log(this.i18n.t('build_sync.sync_start', { count: repos.length }));
     for (const repo of repos) {
-      this.logger.log(`Encontrado repo ${repo.owner}/${repo.name}`);
+      this.logger.log(
+        this.i18n.t('build_sync.repo_found', {
+          owner: repo.owner,
+          name: repo.name,
+        }),
+      );
       await this.syncRepo(repo, options);
     }
-    this.logger.log('Sync finalizado.');
+    this.logger.log(this.i18n.t('build_sync.done'));
   }
 }

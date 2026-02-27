@@ -4,12 +4,15 @@ import { exec as _exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import { I18nService } from '@shared/i18n/i18n.service';
 
 const exec = promisify(_exec);
 
 @Injectable()
 export class BuildPreparationService {
   private readonly logger = new Logger(BuildPreparationService.name);
+
+  constructor(private readonly i18n: I18nService) {}
 
   private getWorkdirRoot() {
     return process.env.WORKDIR ?? path.join(process.cwd(), 'workdir');
@@ -31,7 +34,7 @@ export class BuildPreparationService {
 
   private async runGit(cwd: string, args: string) {
     const cmd = `git ${args}`;
-    this.logger.log(`Running: ${cmd} (cwd=${cwd})`);
+    this.logger.log(this.i18n.t('build_prep.running', { cmd, cwd }));
     try {
       const { stdout, stderr } = await exec(cmd, {
         cwd,
@@ -69,7 +72,13 @@ export class BuildPreparationService {
       null;
 
     if (!exists) {
-      this.logger.log(`Clonando ${repo.owner}/${repo.name} em ${repoDir}`);
+      this.logger.log(
+        this.i18n.t('build_prep.cloning', {
+          owner: repo.owner,
+          name: repo.name,
+          repoDir,
+        }),
+      );
       const parent = path.dirname(repoDir);
       await fs.promises.mkdir(parent, { recursive: true });
       cloneOutput = await this.runGit(
@@ -77,13 +86,22 @@ export class BuildPreparationService {
         `clone ${repo.cloneUrl} ${repo.name}`,
       );
     } else {
-      this.logger.log(`Atualizando ${repo.owner}/${repo.name} via git fetch`);
+      this.logger.log(
+        this.i18n.t('build_prep.fetching', {
+          owner: repo.owner,
+          name: repo.name,
+        }),
+      );
       fetchRes = await this.runGit(repoDir, 'fetch --all --prune');
     }
 
     await fs.promises.rm(worktreeDir, { recursive: true, force: true });
     this.logger.log(
-      `Criando worktree build=${buildId} ref=${ref} em ${worktreeDir}`,
+      this.i18n.t('build_prep.creating_worktree', {
+        buildId,
+        ref,
+        worktreeDir,
+      }),
     );
     let worktreeRes = await this.runGit(
       repoDir,

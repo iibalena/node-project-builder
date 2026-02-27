@@ -12,11 +12,13 @@ import { BuildEntity } from '@shared/db/entities/build.entity';
 import { RepoEntity } from '@shared/db/entities/repo.entity';
 import { BuildRefStateEntity } from '@shared/db/entities/build-ref-state.entity';
 import { SyncController } from './sync.controller';
+import { I18nModule } from '@shared/i18n/i18n.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     DbModule,
+    I18nModule,
     TypeOrmModule.forFeature([BuildEntity, RepoEntity, BuildRefStateEntity]),
   ],
   controllers: [SyncController],

@@ -1,9 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import https from 'node:https';
+import { I18nService } from '@shared/i18n/i18n.service';
 
 @Injectable()
 export class GitHubRepoService {
   private readonly logger = new Logger(GitHubRepoService.name);
+
+  constructor(private readonly i18n: I18nService) {}
 
   private get token() {
     return process.env.GITHUB_TOKEN ?? '';
@@ -12,7 +15,7 @@ export class GitHubRepoService {
   private requestJson<T>(path: string): Promise<T> {
     const token = this.token;
     if (!token) {
-      throw new Error('GITHUB_TOKEN is not set');
+      throw new Error(this.i18n.t('github.token_missing'));
     }
 
     const options = {
@@ -42,7 +45,14 @@ export class GitHubRepoService {
             return;
           }
 
-          reject(new Error(`GitHub API ${res.statusCode}: ${body}`));
+          reject(
+            new Error(
+              this.i18n.t('github.api_error', {
+                status: res.statusCode,
+                body,
+              }),
+            ),
+          );
         });
       });
 

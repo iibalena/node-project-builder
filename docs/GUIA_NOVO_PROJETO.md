@@ -68,3 +68,4 @@ Salvar webhook.
 - O `secret` do GitHub **precisa ser idêntico** ao `GITHUB_WEBHOOK_SECRET` do `.env` do servidor.
 - Se o repositório já estiver cadastrado e precisar ajuste, usar `PUT /repos/:id`.
 - O endpoint de webhook sempre retorna `200`, mas eventos inválidos são ignorados e registrados em log.
+- Logs/mensagens da API/Runner usam `pt-BR` por padrão. Para inglês, configurar `APP_LANG=en-US` no `.env`.

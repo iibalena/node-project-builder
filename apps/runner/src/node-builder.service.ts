@@ -7,6 +7,7 @@ import { exec as _exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import { I18nService } from '@shared/i18n/i18n.service';
 
 const exec = promisify(_exec);
 
@@ -17,6 +18,7 @@ export class NodeBuilderService {
   constructor(
     @InjectRepository(BuildEntity)
     private readonly buildRepository: Repository<BuildEntity>,
+    private readonly i18n: I18nService,
   ) {}
 
   private parseOutputFromScript(script: string): string | null {
@@ -120,12 +122,16 @@ export class NodeBuilderService {
     );
     try {
       await logger.log(
-        `Inicio do build id=${build.id} trigger=${build.trigger} ref=${build.ref}`,
+        this.i18n.t('builder.start', {
+          id: build.id,
+          trigger: build.trigger,
+          ref: build.ref,
+        }),
       );
       const packageJsonPath = path.join(repoDir, 'package.json');
       if (!fs.existsSync(packageJsonPath)) {
         await logger.log(
-          `package.json nao encontrado em ${repoDir}, build ignorado.`,
+          this.i18n.t('builder.package_json_missing', { repoDir }),
         );
         await this.buildRepository.update(build.id, {
           status: BuildStatus.FAILED,
@@ -144,31 +150,31 @@ export class NodeBuilderService {
         installCmd = `${installCmd} --legacy-peer-deps`;
       }
       const distDir = path.join(repoDir, 'dist');
-      await logger.log(`Limpando pasta dist: ${distDir}`);
+      await logger.log(this.i18n.t('builder.clean_dist', { distDir }));
       await this.removeDirWithRetry(distDir);
 
-      await logger.log(`Realizando comando de instalacao: ${installCmd}`);
+      await logger.log(this.i18n.t('builder.install_running', { cmd: installCmd }));
       await exec(installCmd, { cwd: repoDir, maxBuffer: 10 * 1024 * 1024 });
-      await logger.log('Instalacao finalizada.');
+      await logger.log(this.i18n.t('builder.install_finished'));
 
       const buildCmd =
         repoInfo?.buildCommand ??
         (usePnpm ? 'pnpm run build' : 'npm run build');
-      await logger.log(`Realizando build: ${buildCmd}`);
+      await logger.log(this.i18n.t('builder.build_running', { cmd: buildCmd }));
       await exec(buildCmd, { cwd: repoDir, maxBuffer: 20 * 1024 * 1024 });
-      await logger.log('Build finalizado.');
+      await logger.log(this.i18n.t('builder.build_finished'));
 
       const compileScript = path.join(repoDir, 'scripts', 'compile.js');
       if (fs.existsSync(compileScript)) {
-        await logger.log('Executando scripts/compile.js');
+        await logger.log(this.i18n.t('builder.compile_running'));
         await exec(`node ${path.relative(repoDir, compileScript)}`, {
           cwd: repoDir,
           maxBuffer: 20 * 1024 * 1024,
           timeout: this.getCompileTimeoutMs(),
         });
-        await logger.log('compile.js finalizado.');
+        await logger.log(this.i18n.t('builder.compile_finished'));
       } else {
-        await logger.log('scripts/compile.js nao encontrado, etapa ignorada.');
+        await logger.log(this.i18n.t('builder.compile_missing'));
       }
 
       const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
@@ -177,21 +183,19 @@ export class NodeBuilderService {
       if (hasNexe) {
         const scriptName = pkg.scripts['nexe:win'] ? 'nexe:win' : 'nexe';
         const nexeCmd = usePnpm ? `pnpm run ${scriptName}` : `npm run ${scriptName}`;
-        await logger.log(`Executando ${scriptName}: ${nexeCmd}`);
+        await logger.log(this.i18n.t('builder.nexe_running', { scriptName, cmd: nexeCmd }));
         await exec(nexeCmd, { cwd: repoDir, maxBuffer: 50 * 1024 * 1024 });
-        await logger.log(`${scriptName} finalizado.`);
+        await logger.log(this.i18n.t('builder.nexe_finished', { scriptName }));
       } else {
-        await logger.log('Script nexe nao encontrado no package.json, etapa ignorada.');
+        await logger.log(this.i18n.t('builder.nexe_missing'));
       }
 
       const exePath = await this.findConfiguredExePath(repoDir, pkg);
       if (!exePath) {
-        throw new Error(
-          'Executavel nao encontrado no caminho configurado (config.nexe.output ou script nexe/nexe:win com -o/--output).',
-        );
+        throw new Error(this.i18n.t('builder.exe_config_not_found'));
       }
 
-      await logger.log(`Executavel selecionado: ${exePath}`);
+      await logger.log(this.i18n.t('builder.exe_selected', { exePath }));
 
       const artifactFileName = this.getVersionedExecutableName(
         exePath,
@@ -209,28 +213,29 @@ export class NodeBuilderService {
 
       await fs.promises.mkdir(stagingDir, { recursive: true });
       await fs.promises.copyFile(exePath, stagingPath);
-      await logger.log(`Artifact staged at ${stagingPath}`);
+      await logger.log(this.i18n.t('builder.artifact_staged', { stagingPath }));
 
       const executablesDir = this.getExecutablesDir() || artifactsDir;
       const finalDir = path.join(executablesDir, repoName, refSegment);
       await fs.promises.mkdir(finalDir, { recursive: true });
       const finalPath = path.join(finalDir, artifactFileName);
       await fs.promises.copyFile(stagingPath, finalPath);
-      await logger.log(`Artefato copiado para ${finalPath}`);
+      await logger.log(this.i18n.t('builder.artifact_copied', { finalPath }));
 
       await this.removeDirIfExists(stagingDir);
-      await logger.log(`Pasta de staging limpa ${stagingDir}`);
+      await logger.log(this.i18n.t('builder.staging_cleaned', { stagingDir }));
 
       await this.buildRepository.update(build.id, {
         status: BuildStatus.SUCCESS,
         artifactPath: finalPath,
       });
     } catch (err: any) {
-      await logger.error(`Erro no build: ${err?.message ?? String(err)}`);
+      const error = err?.message ?? String(err);
+      await logger.error(this.i18n.t('builder.error', { error }));
       await this.buildRepository.update(build.id, {
         status: BuildStatus.FAILED,
       });
-      this.logger.error(err?.message ?? String(err));
+      this.logger.error(error);
     }
   }
 }

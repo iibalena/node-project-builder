@@ -6,6 +6,7 @@ import { SyncService } from '../sync/sync.service';
 import { GitHubRepoService } from './github-repo.service';
 import { CreateRepoDto } from './dto/create-repo.dto';
 import { UpdateRepoDto } from './dto/update-repo.dto';
+import { I18nService } from '@shared/i18n/i18n.service';
 
 @Injectable()
 export class ReposService {
@@ -15,6 +16,7 @@ export class ReposService {
     private readonly repoRepository: Repository<RepoEntity>,
     private readonly syncService: SyncService,
     private readonly githubRepo: GitHubRepoService,
+    private readonly i18n: I18nService,
   ) {}
 
   async create(data: CreateRepoDto): Promise<RepoEntity> {
@@ -31,11 +33,19 @@ export class ReposService {
         );
         defaultBranch = repoInfo.default_branch;
         this.logger.log(
-          `Branch padrao obtida para ${data.owner}/${data.name}: ${defaultBranch}`,
+          this.i18n.t('repos.default_branch_fetched', {
+            owner: data.owner,
+            name: data.name,
+            branch: defaultBranch,
+          }),
         );
       } catch (err: any) {
         this.logger.warn(
-          `Falha ao obter branch padrao para ${data.owner}/${data.name}: ${err?.message ?? String(err)}. Usando 'master'`,
+          this.i18n.t('repos.default_branch_fetch_failed', {
+            owner: data.owner,
+            name: data.name,
+            error: err?.message ?? String(err),
+          }),
         );
         defaultBranch = 'master';
       }
@@ -56,11 +66,19 @@ export class ReposService {
     const syncResult = await this.syncService.syncRepo({ repoId: saved.id });
     if (!syncResult.ok) {
       this.logger.warn(
-        `Falha no sync do repositorio ${saved.owner}/${saved.name}: ${syncResult.message ?? 'erro desconhecido'}`,
+        this.i18n.t('repos.sync_failed', {
+          owner: saved.owner,
+          name: saved.name,
+          message:
+            syncResult.message ?? this.i18n.t('common.unknown_error'),
+        }),
       );
     } else {
       this.logger.log(
-        `Sync do repositorio disparado para ${saved.owner}/${saved.name}`,
+        this.i18n.t('repos.sync_triggered', {
+          owner: saved.owner,
+          name: saved.name,
+        }),
       );
     }
 
@@ -76,7 +94,7 @@ export class ReposService {
   async update(id: number, data: UpdateRepoDto): Promise<RepoEntity> {
     const repo = await this.repoRepository.findOne({ where: { id } });
     if (!repo) {
-      throw new Error(`Repositorio com id ${id} nao encontrado`);
+      throw new Error(this.i18n.t('repos.not_found_by_id', { id }));
     }
 
     if (typeof data.owner === 'string') {
@@ -112,7 +130,11 @@ export class ReposService {
 
     const saved = await this.repoRepository.save(repo);
     this.logger.log(
-      `Repositorio ${saved.owner}/${saved.name} (id: ${saved.id}) atualizado`,
+      this.i18n.t('repos.updated', {
+        owner: saved.owner,
+        name: saved.name,
+        id: saved.id,
+      }),
     );
     return saved;
   }
@@ -120,11 +142,15 @@ export class ReposService {
   async delete(id: number): Promise<void> {
     const repo = await this.repoRepository.findOne({ where: { id } });
     if (!repo) {
-      throw new Error(`Repositorio com id ${id} nao encontrado`);
+      throw new Error(this.i18n.t('repos.not_found_by_id', { id }));
     }
     await this.repoRepository.remove(repo);
     this.logger.log(
-      `Repositorio ${repo.owner}/${repo.name} (id: ${id}) removido`,
+      this.i18n.t('repos.deleted', {
+        owner: repo.owner,
+        name: repo.name,
+        id,
+      }),
     );
   }
 }
