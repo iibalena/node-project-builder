@@ -31,6 +31,28 @@ export class NodeBuilderService {
     return null;
   }
 
+  private parseOutputFromCompileJs(content: string, pkg: any): string | null {
+    const literal = content.match(/\boutput\s*:\s*['"]([^'"]+\.exe)['"]/i);
+    if (literal?.[1]) return literal[1];
+
+    const appName = String(pkg?.name ?? '').trim();
+    if (appName) {
+      const concat = content.match(
+        /\boutput\s*:\s*['"]([^'"]*)['"]\s*\+\s*appName\s*\+\s*['"]([^'"]*\.exe)['"]/i,
+      );
+      if (concat?.[1] !== undefined && concat?.[2] !== undefined) {
+        return `${concat[1]}${appName}${concat[2]}`;
+      }
+
+      const tpl = content.match(/\boutput\s*:\s*`([^`]*\$\{\s*appName\s*\}[^`]*)`/i);
+      if (tpl?.[1]) {
+        return tpl[1].replace(/\$\{\s*appName\s*\}/g, appName);
+      }
+    }
+
+    return null;
+  }
+
   private async findConfiguredExePath(repoDir: string, pkg: any): Promise<string | null> {
     const candidates: string[] = [];
 
@@ -46,6 +68,20 @@ export class NodeBuilderService {
       const outputFromScript = this.parseOutputFromScript(scriptValue);
       if (outputFromScript) {
         candidates.push(path.resolve(repoDir, outputFromScript));
+      }
+    }
+
+    const compileScript = path.join(repoDir, 'scripts', 'compile.js');
+    const hasCompileScript = await fs.promises
+      .access(compileScript)
+      .then(() => true)
+      .catch(() => false);
+
+    if (hasCompileScript) {
+      const compileContent = await fs.promises.readFile(compileScript, 'utf8');
+      const outputFromCompile = this.parseOutputFromCompileJs(compileContent, pkg);
+      if (outputFromCompile) {
+        candidates.push(path.resolve(repoDir, outputFromCompile));
       }
     }
 
@@ -167,11 +203,18 @@ export class NodeBuilderService {
       const compileScript = path.join(repoDir, 'scripts', 'compile.js');
       if (fs.existsSync(compileScript)) {
         await logger.log(this.i18n.t('builder.compile_running'));
-        await exec(`node ${path.relative(repoDir, compileScript)}`, {
+        const compileResult = await exec(
+          `node --unhandled-rejections=strict ${path.relative(repoDir, compileScript)}`,
+          {
           cwd: repoDir,
           maxBuffer: 20 * 1024 * 1024,
           timeout: this.getCompileTimeoutMs(),
-        });
+          },
+        );
+        const compileOut = `${compileResult.stdout ?? ''}${compileResult.stderr ?? ''}`.trim();
+        if (compileOut) {
+          await logger.log(`--- compile output ---\n${compileOut}`);
+        }
         await logger.log(this.i18n.t('builder.compile_finished'));
       } else {
         await logger.log(this.i18n.t('builder.compile_missing'));
