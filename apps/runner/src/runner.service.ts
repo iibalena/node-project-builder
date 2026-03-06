@@ -10,8 +10,10 @@ import { RepoEntity } from '@shared/db/entities/repo.entity';
 import { BuildLogger } from './build-logger';
 import { BuildPreparationService } from './build-prep.service';
 import { NodeBuilderService } from './node-builder.service';
+import { AngularBuilderService } from './angular-builder.service';
 import { BuildSyncService } from './build-sync.service';
 import { I18nService } from '@shared/i18n/i18n.service';
+import { RepoType } from '@shared/db/entities/repo-type.enum';
 
 @Injectable()
 export class RunnerService implements OnModuleInit {
@@ -26,6 +28,7 @@ export class RunnerService implements OnModuleInit {
     private readonly buildRepository: Repository<BuildEntity>,
     private readonly buildPreparation: BuildPreparationService,
     private readonly nodeBuilder: NodeBuilderService,
+    private readonly angularBuilder: AngularBuilderService,
     private readonly buildSync: BuildSyncService,
     private readonly i18n: I18nService,
   ) {}
@@ -217,7 +220,21 @@ export class RunnerService implements OnModuleInit {
         }),
       );
       await logger.log(this.i18n.t('runner.pipeline_start'));
-      await this.nodeBuilder.build(build, prepared.repoDir);
+      const repoType = repo.type ?? RepoType.TYPESCRIPT;
+      if (repoType === RepoType.ANGULAR) {
+        await this.angularBuilder.build(build, prepared.repoDir);
+      } else if (repoType === RepoType.TYPESCRIPT) {
+        await this.nodeBuilder.build(build, prepared.repoDir);
+      } else {
+        await logger.error(
+          this.i18n.t('runner.unsupported_repo_type', {
+            type: repoType,
+          }),
+        );
+        await this.buildRepository.update(build.id, {
+          status: BuildStatus.FAILED,
+        });
+      }
       } catch (err: any) {
       const message = err?.message ?? String(err);
       await logger.error(this.i18n.t('runner.error_block', { message }));

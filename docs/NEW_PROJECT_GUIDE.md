@@ -16,7 +16,8 @@ Minimum payload:
 ```json
 {
   "owner": "UltraSistemas",
-  "name": "ultra-fv3-ws"
+  "name": "ultra-fv3-ws",
+  "type": "typescript"
 }
 ```
 
@@ -26,6 +27,7 @@ Full payload (optional):
 {
   "owner": "UltraSistemas",
   "name": "ultra-fv3-ws",
+  "type": "angular",
   "cloneUrl": "https://github.com/UltraSistemas/ultra-fv3-ws.git",
   "defaultBranch": "master",
   "installCommand": "npm install",
@@ -67,5 +69,6 @@ Save webhook.
 
 - The GitHub `secret` **must exactly match** `GITHUB_WEBHOOK_SECRET` in the server `.env`.
 - If the repository is already registered and needs updates, use `PUT /repos/:id`.
+- Supported `type` values: `typescript` (default) and `angular`.
 - The webhook endpoint always returns `200`, but invalid events are ignored and logged.
 - API/Runner logs/messages default to `pt-BR`. To force English, set `APP_LANG=en-US` in `.env`.

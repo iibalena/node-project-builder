@@ -1,12 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { RepoEntity } from '@shared/db/entities/repo.entity';
 import { SyncService } from '../sync/sync.service';
 import { GitHubRepoService } from './github-repo.service';
 import { CreateRepoDto } from './dto/create-repo.dto';
 import { UpdateRepoDto } from './dto/update-repo.dto';
 import { I18nService } from '@shared/i18n/i18n.service';
+import { RepoType } from '@shared/db/entities/repo-type.enum';
 
 @Injectable()
 export class ReposService {
@@ -18,6 +19,15 @@ export class ReposService {
     private readonly githubRepo: GitHubRepoService,
     private readonly i18n: I18nService,
   ) {}
+
+  private isUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+
+    const driverError = error.driverError as { code?: string } | undefined;
+    return driverError?.code === '23505';
+  }
 
   async create(data: CreateRepoDto): Promise<RepoEntity> {
     const cloneUrl =
@@ -54,6 +64,7 @@ export class ReposService {
     const repo = this.repoRepository.create({
       owner: data.owner,
       name: data.name,
+      type: data.type ?? RepoType.TYPESCRIPT,
       cloneUrl,
       defaultBranch,
       isActive: true,
@@ -61,7 +72,20 @@ export class ReposService {
       useLegacyPeerDeps: data.useLegacyPeerDeps ?? false,
     });
 
-    const saved = await this.repoRepository.save(repo);
+    let saved: RepoEntity;
+    try {
+      saved = await this.repoRepository.save(repo);
+    } catch (error) {
+      if (this.isUniqueViolation(error)) {
+        throw new ConflictException(
+          this.i18n.t('repos.already_exists', {
+            owner: data.owner,
+            name: data.name,
+          }),
+        );
+      }
+      throw error;
+    }
 
     const syncResult = await this.syncService.syncRepo({ repoId: saved.id });
     if (!syncResult.ok) {
@@ -103,6 +127,10 @@ export class ReposService {
 
     if (typeof data.name === 'string') {
       repo.name = data.name.trim();
+    }
+
+    if (typeof data.type === 'string') {
+      repo.type = data.type;
     }
 
     if (typeof data.cloneUrl === 'string') {

@@ -1,4 +1,5 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { RepoType } from '@shared/db/entities/repo-type.enum';
 
 export class UpdateRepoDto {
   @IsOptional()
@@ -10,6 +11,10 @@ export class UpdateRepoDto {
   @IsString()
   @IsNotEmpty()
   name?: string;
+
+  @IsOptional()
+  @IsEnum(RepoType)
+  type?: RepoType;
 
   @IsOptional()
   @IsString()

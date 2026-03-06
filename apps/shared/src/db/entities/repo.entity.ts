@@ -1,6 +1,7 @@
 import { Column, Entity, Index, OneToMany } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { BuildEntity } from './build.entity';
+import { RepoType } from './repo-type.enum';
 
 @Index(['owner', 'name'], { unique: true })
 @Entity({ name: 'repos' })
@@ -10,6 +11,9 @@ export class RepoEntity extends BaseEntity {
 
   @Column({ type: 'varchar', length: 200 })
   name: string;
+
+  @Column({ type: 'varchar', length: 30, default: RepoType.TYPESCRIPT })
+  type: RepoType;
 
   @Column({ name: 'clone_url', type: 'text' })
   cloneUrl: string;
