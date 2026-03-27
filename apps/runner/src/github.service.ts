@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import https from 'node:https';
+import dns from 'node:dns/promises';
 import { I18nService } from '@shared/i18n/i18n.service';
 
 @Injectable()
@@ -12,12 +13,49 @@ export class GitHubService {
     return process.env.GITHUB_TOKEN ?? '';
   }
 
-  private requestJson<T>(path: string): Promise<T> {
-    const token = this.token;
-    if (!token) {
-      throw new Error(this.i18n.t('github.token_missing'));
-    }
+  private getRetryAttempts() {
+    const value = Number(process.env.GITHUB_REQUEST_RETRIES ?? 5);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 5;
+  }
 
+  private getRetryDelayMs() {
+    const value = Number(process.env.GITHUB_RETRY_DELAY_MS ?? 5000);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 5000;
+  }
+
+  private async wait(ms: number) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async ensureGitHubReachable() {
+    await dns.lookup('github.com');
+  }
+
+  private isRetryableNetworkError(error: unknown): boolean {
+    const value = error as {
+      code?: string;
+      cause?: { code?: string };
+      message?: string;
+    };
+    const code = value?.code ?? value?.cause?.code;
+    const message = String(value?.message ?? '');
+
+    const retryableCodes = new Set([
+      'ENOTFOUND',
+      'EAI_AGAIN',
+      'ETIMEDOUT',
+      'ECONNRESET',
+      'ECONNREFUSED',
+      'EHOSTUNREACH',
+      'ENETUNREACH',
+    ]);
+
+    if (code && retryableCodes.has(code)) return true;
+
+    return /getaddrinfo|ENOTFOUND|network|timeout|socket hang up/i.test(message);
+  }
+
+  private requestJsonOnce<T>(path: string, token: string): Promise<T> {
     const options = {
       hostname: 'api.github.com',
       method: 'GET',
@@ -59,6 +97,46 @@ export class GitHubService {
       req.on('error', reject);
       req.end();
     });
+  }
+
+  private requestJson<T>(path: string): Promise<T> {
+    const token = this.token;
+    if (!token) {
+      throw new Error(this.i18n.t('github.token_missing'));
+    }
+
+    const maxAttempts = this.getRetryAttempts();
+    const retryDelayMs = this.getRetryDelayMs();
+
+    const run = async () => {
+      let lastError: unknown;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          await this.ensureGitHubReachable();
+          return await this.requestJsonOnce<T>(path, token);
+        } catch (error) {
+          lastError = error;
+          if (attempt >= maxAttempts || !this.isRetryableNetworkError(error)) {
+            throw error;
+          }
+
+          this.logger.warn(
+            this.i18n.t('github.request_retry', {
+              attempt,
+              max: maxAttempts,
+              delay: Math.round(retryDelayMs / 1000),
+              error: (error as any)?.message ?? String(error),
+            }),
+          );
+          await this.wait(retryDelayMs);
+        }
+      }
+
+      throw lastError;
+    };
+
+    return run();
   }
 
   async listOpenPulls(owner: string, repo: string) {

@@ -3,6 +3,7 @@ export const messagesPtBr: Record<string, string> = {
 
   'github.token_missing': 'GITHUB_TOKEN nao esta configurado',
   'github.api_error': 'GitHub API {status}: {body}',
+  'github.request_retry': 'Falha de rede ao acessar GitHub (tentativa {attempt}/{max}). Aguardando {delay}s para tentar novamente. Erro: {error}',
   'github.open_prs_fetched': 'Encontrados {count} PRs abertos para {owner}/{repo}',
 
   'repos.default_branch_fetched': 'Branch padrao obtida para {owner}/{name}: {branch}',

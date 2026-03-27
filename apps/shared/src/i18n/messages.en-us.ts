@@ -3,6 +3,7 @@ export const messagesEnUs: Record<string, string> = {
 
   'github.token_missing': 'GITHUB_TOKEN is not configured',
   'github.api_error': 'GitHub API {status}: {body}',
+  'github.request_retry': 'Network failure while contacting GitHub (attempt {attempt}/{max}). Waiting {delay}s before retry. Error: {error}',
   'github.open_prs_fetched': 'Fetched {count} open PRs for {owner}/{repo}',
 
   'repos.default_branch_fetched': 'Default branch fetched for {owner}/{name}: {branch}',
