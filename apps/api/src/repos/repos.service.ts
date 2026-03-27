@@ -7,7 +7,6 @@ import { GitHubRepoService } from './github-repo.service';
 import { CreateRepoDto } from './dto/create-repo.dto';
 import { UpdateRepoDto } from './dto/update-repo.dto';
 import { I18nService } from '@shared/i18n/i18n.service';
-import { RepoType } from '@shared/db/entities/repo-type.enum';
 
 @Injectable()
 export class ReposService {
@@ -64,7 +63,7 @@ export class ReposService {
     const repo = this.repoRepository.create({
       owner: data.owner,
       name: data.name,
-      type: data.type ?? RepoType.TYPESCRIPT,
+      type: data.type,
       cloneUrl,
       defaultBranch,
       isActive: true,
