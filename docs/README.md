@@ -1,7 +1,8 @@
 # Documentation
 
-- [Guia em Português (PT-BR)](./GUIA_NOVO_PROJETO.md)
-- [English Guide (EN-US)](./NEW_PROJECT_GUIDE.md)
+- [Arquitetura do projeto (PT-BR)](./ARQUITETURA.md)
+- [Guia: novo projeto + webhook (PT-BR)](./GUIA_NOVO_PROJETO.md)
+- [New project + webhook guide (EN-US)](./NEW_PROJECT_GUIDE.md)
 
 ## Purpose
 
