@@ -7,6 +7,7 @@ import { ReposModule } from './repos/repos.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { BuildsModule } from './builds/builds.module';
 import { SyncModule } from './sync/sync.module';
+import { PublicationsModule } from './publications/publications.module';
 import { I18nModule } from '../../shared/src/i18n/i18n.module';
 
 @Module({
@@ -19,6 +20,7 @@ import { I18nModule } from '../../shared/src/i18n/i18n.module';
     WebhooksModule,
     BuildsModule,
     SyncModule,
+    PublicationsModule,
   ],
   controllers: [ApiController],
   providers: [ApiService],

@@ -155,5 +155,14 @@ export const messagesEnUs: Record<string, string> = {
   'build_prep.cleanup_retry': 'Worktree is busy, cleanup retry {attempt}/{total}: {worktreeDir}',
   'build_prep.cleanup_deferred': 'Temporary failure while cleaning worktree (will retry on next build of this repo): {worktreeDir} error={error}',
   'build_prep.cleanup_pending_removed': 'Removed pending worktree: {worktreeDir}',
-  'build_prep.cleanup_pending_locked': 'Pending worktree is still locked: {worktreeDir} error={error}'
+  'build_prep.cleanup_pending_locked': 'Pending worktree is still locked: {worktreeDir} error={error}',
+
+  'publication.build_not_found': 'Build not found',
+  'publication.artifact_missing': 'Build has no artifact to publish',
+  'publication.artifact_file_missing': 'Artifact file not found: {path}',
+  'publication.build_not_success': 'Only SUCCESS builds can start publication',
+  'publication.already_exists': 'Publication already exists for same commit/artifact/track. Reusing previous result.',
+  'publication.ready_to_publish': 'Publication is eligible. Upload can start without consuming versionCode early.',
+  'publication.created_pending': 'Publication created as PENDING with reserved versionCode.',
+  'publication.not_found': 'Publication not found'
 };

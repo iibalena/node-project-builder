@@ -155,5 +155,14 @@ export const messagesPtBr: Record<string, string> = {
   'build_prep.cleanup_retry': 'Worktree ocupado, tentativa de limpeza {attempt}/{total}: {worktreeDir}',
   'build_prep.cleanup_deferred': 'Falha temporaria ao limpar worktree (nova tentativa no proximo build do repo): {worktreeDir} erro={error}',
   'build_prep.cleanup_pending_removed': 'Worktree pendente removido: {worktreeDir}',
-  'build_prep.cleanup_pending_locked': 'Worktree pendente ainda bloqueado: {worktreeDir} erro={error}'
+  'build_prep.cleanup_pending_locked': 'Worktree pendente ainda bloqueado: {worktreeDir} erro={error}',
+
+  'publication.build_not_found': 'Build nao encontrado',
+  'publication.artifact_missing': 'Build sem artifact para publicar',
+  'publication.artifact_file_missing': 'Arquivo do artifact nao encontrado: {path}',
+  'publication.build_not_success': 'Somente builds com SUCCESS podem iniciar publicacao',
+  'publication.already_exists': 'Publicacao ja existente para mesmo commit/artifact/track. Reutilizando resultado.',
+  'publication.ready_to_publish': 'Publicacao elegivel. Pode iniciar upload sem consumir versionCode antecipadamente.',
+  'publication.created_pending': 'Publicacao criada em estado PENDING com versionCode reservado.',
+  'publication.not_found': 'Publicacao nao encontrada'
 };
