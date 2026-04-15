@@ -79,8 +79,37 @@ export class WebhooksService {
     return elapsed < this.getCooldownMs();
   }
 
+  isFromGitHubApp(payload: any): boolean {
+    return payload?.installation?.id != null;
+  }
+
+  shouldProcessWebhook(payload: any): boolean {
+    return this.isFromGitHubApp(payload);
+  }
+
+  private resolveRepository(payload: any): { owner: string | null; name: string | null } {
+    const fullName = String(payload?.repository?.full_name ?? '').trim();
+    if (fullName.includes('/')) {
+      const [owner, name] = fullName.split('/', 2);
+      if (owner && name) {
+        return { owner, name };
+      }
+    }
+
+    const owner =
+      payload?.repository?.owner?.login ??
+      payload?.repository?.owner?.name ??
+      null;
+
+    const name = payload?.repository?.name ?? null;
+    return { owner, name };
+  }
+
   verifyGithubSignature(rawBody: Buffer, headers: GithubHeaders): boolean {
-    const secret = process.env.GITHUB_WEBHOOK_SECRET ?? '';
+    const secret =
+      process.env.GITHUB_APP_WEBHOOK_SECRET ??
+      process.env.GITHUB_WEBHOOK_SECRET ??
+      '';
     if (!secret) return false;
 
     const sig = headers['x-hub-signature-256'];
@@ -103,6 +132,15 @@ export class WebhooksService {
     headers: GithubHeaders;
     payload: any;
   }): Promise<{ ok: true; ignored?: boolean }> {
+    const source = this.isFromGitHubApp(args.payload)
+      ? 'github-app'
+      : 'repo-webhook';
+    this.logger.log(this.i18n.t('webhook.source', { source }));
+
+    if (!this.shouldProcessWebhook(args.payload)) {
+      return { ok: true, ignored: true };
+    }
+
     const ok = this.verifyGithubSignature(args.rawBody, args.headers);
     if (!ok) {
       this.logger.error(
@@ -113,12 +151,9 @@ export class WebhooksService {
 
     const event = args.headers['x-github-event'] ?? '';
 
-    const repoOwner =
-      args.payload?.repository?.owner?.login ??
-      args.payload?.repository?.owner?.name ??
-      null;
-
-    const repoName = args.payload?.repository?.name ?? null;
+    const { owner: repoOwner, name: repoName } = this.resolveRepository(
+      args.payload,
+    );
 
     if (!repoOwner || !repoName) {
       this.logger.warn(this.i18n.t('webhook.payload_repo_missing'));
@@ -137,6 +172,19 @@ export class WebhooksService {
         }),
       );
       return { ok: true, ignored: true };
+    }
+
+    const installationId = String(args.payload?.installation?.id ?? '');
+    if (installationId && !repo.githubInstallationId) {
+      repo.githubInstallationId = installationId;
+      await this.repoRepository.save(repo);
+      this.logger.log(
+        this.i18n.t('webhook.repo_installation_id_saved', {
+          owner: repoOwner,
+          name: repoName,
+          installationId,
+        }),
+      );
     }
 
     // PR -> exe build

@@ -40,6 +40,9 @@ export class RepoEntity extends BaseEntity {
   @Column({ name: 'use_legacy_peer_deps', type: 'boolean', default: false })
   useLegacyPeerDeps: boolean;
 
+  @Column({ name: 'github_installation_id', type: 'bigint', nullable: true })
+  githubInstallationId: string | null;
+
   @OneToMany(() => BuildEntity, (b) => b.repo)
   builds: BuildEntity[];
 }

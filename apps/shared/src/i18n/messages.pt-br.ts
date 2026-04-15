@@ -19,9 +19,11 @@ export const messagesPtBr: Record<string, string> = {
 
   'webhook.received': 'Webhook recebido delivery={delivery} event={event}',
   'webhook.processed': 'Webhook {delivery} processado (retorno 200)',
+  'webhook.source': 'Webhook source: {source}',
   'webhook.signature_invalid': 'Falha na validacao da assinatura do webhook (token/segredo invalido) — entrega ignorada',
   'webhook.payload_repo_missing': 'Payload do webhook sem owner/name do repositorio — ignorando',
   'webhook.repo_not_tracked': 'Repositorio {owner}/{name} nao monitorado ou inativo — ignorando',
+  'webhook.repo_installation_id_saved': 'GitHub App installation.id salvo para {owner}/{name}: {installationId}',
   'webhook.pull_request_event': 'Evento pull_request recebido action={action}',
   'webhook.pr_payload_missing': 'Payload de pull_request sem sha/ref/number — ignorando',
   'webhook.cooldown_pr': 'Cooldown ativo para {owner}/{name} pr={pr} (ignorando)',

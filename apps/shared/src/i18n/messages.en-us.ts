@@ -19,9 +19,11 @@ export const messagesEnUs: Record<string, string> = {
 
   'webhook.received': 'Webhook received delivery={delivery} event={event}',
   'webhook.processed': 'Webhook {delivery} processed (returned 200)',
+  'webhook.source': 'Webhook source: {source}',
   'webhook.signature_invalid': 'Webhook signature validation failed (invalid token/secret) — delivery ignored',
   'webhook.payload_repo_missing': 'Webhook payload missing repository owner/name — ignoring',
   'webhook.repo_not_tracked': 'Repository {owner}/{name} is not tracked or inactive — ignoring',
+  'webhook.repo_installation_id_saved': 'Saved GitHub App installation.id for {owner}/{name}: {installationId}',
   'webhook.pull_request_event': 'pull_request event received action={action}',
   'webhook.pr_payload_missing': 'pull_request payload missing sha/ref/number — ignoring',
   'webhook.cooldown_pr': 'Cooldown active for {owner}/{name} pr={pr} (ignoring)',
