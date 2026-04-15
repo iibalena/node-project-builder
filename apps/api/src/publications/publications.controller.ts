@@ -4,6 +4,7 @@ import { PlanPublicationDto } from './dto/plan-publication.dto';
 import { CreatePublicationDto } from './dto/create-publication.dto';
 import { UpdatePublicationStatusDto } from './dto/update-publication-status.dto';
 import { ListPublicationsDto } from './dto/list-publications.dto';
+import { ExecutePublicationDto } from './dto/execute-publication.dto';
 
 @Controller('publications')
 export class PublicationsController {
@@ -17,6 +18,14 @@ export class PublicationsController {
   @Post()
   async create(@Body() body: CreatePublicationDto) {
     return this.publicationsService.create(body);
+  }
+
+  @Post(':id/execute')
+  async execute(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: ExecutePublicationDto,
+  ) {
+    return this.publicationsService.execute(id, body);
   }
 
   @Patch(':id/status')

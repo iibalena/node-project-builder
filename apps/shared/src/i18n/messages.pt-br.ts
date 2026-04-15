@@ -164,5 +164,13 @@ export const messagesPtBr: Record<string, string> = {
   'publication.already_exists': 'Publicacao ja existente para mesmo commit/artifact/track. Reutilizando resultado.',
   'publication.ready_to_publish': 'Publicacao elegivel. Pode iniciar upload sem consumir versionCode antecipadamente.',
   'publication.created_pending': 'Publicacao criada em estado PENDING com versionCode reservado.',
-  'publication.not_found': 'Publicacao nao encontrada'
+  'publication.not_found': 'Publicacao nao encontrada',
+  'publication.repo_not_found': 'Repositorio da publicacao nao encontrado',
+  'publication.already_success': 'Publicacao ja concluida com sucesso',
+  'publication.provider_not_supported': 'Provider de publicacao nao suportado: {provider}',
+  'publication.google_play_android_only': 'Google Play suporta apenas plataforma Android',
+  'publication.android_app_id_missing': 'androidAppId nao configurado no repositorio',
+  'publication.google_play_service_account_missing': 'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON nao configurado no ambiente',
+  'publication.google_play_edit_create_failed': 'Falha ao criar edit na Google Play API',
+  'publication.google_play_version_code_missing': 'Google Play nao retornou versionCode do bundle enviado'
 };

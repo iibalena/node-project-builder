@@ -8,6 +8,7 @@ import { DataSource, Repository } from 'typeorm';
 import * as fs from 'fs';
 import { createHash } from 'crypto';
 import { BuildEntity, BuildStatus } from '../../../shared/src/db/entities/build.entity';
+import { RepoEntity } from '../../../shared/src/db/entities/repo.entity';
 import {
   PublicationEntity,
   PublicationPlatform,
@@ -19,20 +20,29 @@ import { PlanPublicationDto } from './dto/plan-publication.dto';
 import { CreatePublicationDto } from './dto/create-publication.dto';
 import { UpdatePublicationStatusDto } from './dto/update-publication-status.dto';
 import { ListPublicationsDto } from './dto/list-publications.dto';
+import { ExecutePublicationDto } from './dto/execute-publication.dto';
 import { I18nService } from '../../../shared/src/i18n/i18n.service';
+import { GooglePlayPublisherService } from './google-play-publisher.service';
 
 @Injectable()
 export class PublicationsService {
   constructor(
     @InjectRepository(BuildEntity)
     private readonly buildRepository: Repository<BuildEntity>,
+    @InjectRepository(RepoEntity)
+    private readonly repoRepository: Repository<RepoEntity>,
     @InjectRepository(PublicationEntity)
     private readonly publicationRepository: Repository<PublicationEntity>,
     @InjectRepository(VersionCodeStateEntity)
     private readonly versionCodeStateRepository: Repository<VersionCodeStateEntity>,
     private readonly dataSource: DataSource,
     private readonly i18n: I18nService,
+    private readonly googlePlayPublisher: GooglePlayPublisherService,
   ) {}
+
+  private getGooglePlayServiceAccountPath() {
+    return String(process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ?? '').trim();
+  }
 
   private normalizeTrack(track?: string) {
     const value = String(track ?? 'internal').trim().toLowerCase();
@@ -231,6 +241,116 @@ export class PublicationsService {
       versionCode,
       message: this.i18n.t('publication.created_pending'),
     };
+  }
+
+  async execute(id: number, dto: ExecutePublicationDto) {
+    const publication = await this.publicationRepository.findOne({
+      where: { id },
+    });
+    if (!publication) {
+      throw new NotFoundException(this.i18n.t('publication.not_found'));
+    }
+
+    if (publication.status === PublicationStatus.SUCCESS) {
+      return {
+        ok: true,
+        alreadyPublished: true,
+        publicationId: publication.id,
+        versionCode: publication.versionCode,
+        message: this.i18n.t('publication.already_success'),
+      };
+    }
+
+    const build = await this.getBuildWithArtifact(publication.buildId);
+
+    const existing = await this.findSuccessfulPublication({
+      repositoryId: publication.repositoryId,
+      platform: publication.platform,
+      track: publication.track,
+      commitSha: publication.commitSha,
+      artifactHash: publication.artifactHash,
+    });
+
+    if (existing && existing.id !== publication.id) {
+      publication.status = PublicationStatus.SKIPPED;
+      await this.publicationRepository.save(publication);
+      return {
+        ok: true,
+        alreadyPublished: true,
+        skipUpload: true,
+        skipVersionCode: true,
+        publicationId: existing.id,
+        versionCode: existing.versionCode,
+        message: this.i18n.t('publication.already_exists'),
+      };
+    }
+
+    const repo = await this.repoRepository.findOne({
+      where: { id: publication.repositoryId },
+    });
+    if (!repo) {
+      throw new NotFoundException(this.i18n.t('publication.repo_not_found'));
+    }
+
+    try {
+      if (publication.provider === PublicationProvider.GOOGLE_PLAY) {
+        if (publication.platform !== PublicationPlatform.ANDROID) {
+          throw new BadRequestException(
+            this.i18n.t('publication.google_play_android_only'),
+          );
+        }
+
+        const packageName = String(repo.androidAppId ?? '').trim();
+        if (!packageName) {
+          throw new BadRequestException(
+            this.i18n.t('publication.android_app_id_missing'),
+          );
+        }
+
+        const serviceAccountJsonPath = this.getGooglePlayServiceAccountPath();
+        if (!serviceAccountJsonPath) {
+          throw new BadRequestException(
+            this.i18n.t('publication.google_play_service_account_missing'),
+          );
+        }
+
+        const result = await this.googlePlayPublisher.publishBundle(
+          {
+            serviceAccountJsonPath,
+            packageName,
+            artifactPath: build.artifactPath!,
+            track: publication.track,
+            versionCode: publication.versionCode,
+          },
+          { dryRun: dto.dryRun },
+        );
+
+        publication.externalReleaseId = result.externalReleaseId;
+        publication.versionCode =
+          result.uploadedVersionCode ?? publication.versionCode;
+        publication.status = PublicationStatus.SUCCESS;
+        await this.publicationRepository.save(publication);
+
+        return {
+          ok: true,
+          publicationId: publication.id,
+          status: publication.status,
+          versionCode: publication.versionCode,
+          externalReleaseId: publication.externalReleaseId,
+          dryRun: result.dryRun,
+        };
+      }
+
+      throw new BadRequestException(
+        this.i18n.t('publication.provider_not_supported', {
+          provider: publication.provider,
+        }),
+      );
+    } catch (err: any) {
+      publication.status = PublicationStatus.FAILED;
+      await this.publicationRepository.save(publication);
+      throw err;
+    }
   }
 
   async updateStatus(id: number, dto: UpdatePublicationStatusDto) {

@@ -164,5 +164,13 @@ export const messagesEnUs: Record<string, string> = {
   'publication.already_exists': 'Publication already exists for same commit/artifact/track. Reusing previous result.',
   'publication.ready_to_publish': 'Publication is eligible. Upload can start without consuming versionCode early.',
   'publication.created_pending': 'Publication created as PENDING with reserved versionCode.',
-  'publication.not_found': 'Publication not found'
+  'publication.not_found': 'Publication not found',
+  'publication.repo_not_found': 'Publication repository not found',
+  'publication.already_success': 'Publication already completed successfully',
+  'publication.provider_not_supported': 'Publication provider is not supported: {provider}',
+  'publication.google_play_android_only': 'Google Play supports Android platform only',
+  'publication.android_app_id_missing': 'androidAppId is not configured on repository',
+  'publication.google_play_service_account_missing': 'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is missing in environment',
+  'publication.google_play_edit_create_failed': 'Failed to create edit in Google Play API',
+  'publication.google_play_version_code_missing': 'Google Play did not return versionCode from uploaded bundle'
 };
