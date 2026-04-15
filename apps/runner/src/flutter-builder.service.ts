@@ -147,19 +147,13 @@ export class FlutterBuilderService {
       process.env.ANDROID_KEYSTORE_PATH ?? '',
     );
     const storePassword = this.sanitizeEnvValue(
-      process.env.ANDROID_KEYSTORE_STORE_PASSWORD ??
-        process.env.ANDROID_KEYSTORE_PASSWORD ??
-        '',
+      process.env.ANDROID_KEYSTORE_STORE_PASSWORD ?? '',
     );
     const keyAlias = this.sanitizeEnvValue(
-      process.env.ANDROID_KEYSTORE_KEY_ALIAS ??
-        process.env.ANDROID_KEY_ALIAS ??
-        '',
+      process.env.ANDROID_KEYSTORE_KEY_ALIAS ?? '',
     );
     const keyPassword = this.sanitizeEnvValue(
-      process.env.ANDROID_KEYSTORE_KEY_PASSWORD ??
-        process.env.ANDROID_KEY_PASSWORD ??
-        '',
+      process.env.ANDROID_KEYSTORE_KEY_PASSWORD ?? '',
     );
 
     const values = [keystorePath, storePassword, keyAlias, keyPassword];
@@ -335,8 +329,6 @@ export class FlutterBuilderService {
     logger: BuildLogger,
   ): Promise<{
     keyPropertiesPath: string;
-    hadExisting: boolean;
-    existingContent: string | null;
   } | null> {
     const signing = this.getAndroidSigningConfig();
     if (!signing) {
@@ -357,16 +349,11 @@ export class FlutterBuilderService {
     await fs.promises.mkdir(androidDir, { recursive: true });
     const keyPropertiesPath = path.join(androidDir, this.androidKeyPropertiesFile);
 
-    const hadExisting = await this.pathExists(keyPropertiesPath);
-    const existingContent = hadExisting
-      ? await fs.promises.readFile(keyPropertiesPath, 'utf8')
-      : null;
-
     const keyPropertiesContent = [
       `storePassword=${signing.storePassword}`,
       `keyPassword=${signing.keyPassword}`,
       `keyAlias=${signing.keyAlias}`,
-      `storeFile=${resolvedKeystorePath.replace(/\\/g, '/')}`,
+      `storeFile=${signing.keystorePath}`,
       '',
     ].join('\n');
 
@@ -377,45 +364,7 @@ export class FlutterBuilderService {
       }),
     );
 
-    return {
-      keyPropertiesPath,
-      hadExisting,
-      existingContent,
-    };
-  }
-
-  private async restoreAndroidSigning(
-    context: {
-      keyPropertiesPath: string;
-      hadExisting: boolean;
-      existingContent: string | null;
-    } | null,
-    logger: BuildLogger,
-  ) {
-    if (!context) {
-      return;
-    }
-
-    if (context.hadExisting) {
-      await fs.promises.writeFile(
-        context.keyPropertiesPath,
-        context.existingContent ?? '',
-        'utf8',
-      );
-      await logger.log(
-        this.i18n.t('builder.flutter_key_properties_restored', {
-          keyPropertiesPath: context.keyPropertiesPath,
-        }),
-      );
-      return;
-    }
-
-    await fs.promises.rm(context.keyPropertiesPath, { force: true });
-    await logger.log(
-      this.i18n.t('builder.flutter_key_properties_removed', {
-        keyPropertiesPath: context.keyPropertiesPath,
-      }),
-    );
+    return { keyPropertiesPath };
   }
 
   async build(build: BuildEntity, repoDir: string) {
@@ -428,8 +377,6 @@ export class FlutterBuilderService {
     );
     let signingContext: {
       keyPropertiesPath: string;
-      hadExisting: boolean;
-      existingContent: string | null;
     } | null = null;
 
     try {
@@ -539,16 +486,7 @@ export class FlutterBuilderService {
       });
       this.logger.error(error);
     } finally {
-      try {
-        await this.restoreAndroidSigning(signingContext, logger);
-      } catch (cleanupErr: any) {
-        const error = cleanupErr?.message ?? String(cleanupErr);
-        await logger.error(
-          this.i18n.t('builder.flutter_key_properties_cleanup_failed', {
-            error,
-          }),
-        );
-      }
+      void signingContext;
     }
   }
 }
