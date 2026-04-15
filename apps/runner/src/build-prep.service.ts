@@ -32,9 +32,35 @@ export class BuildPreparationService {
     );
   }
 
-  private async runGit(cwd: string, args: string) {
+  private getGithubToken() {
+    return (process.env.GITHUB_TOKEN ?? '').trim();
+  }
+
+  private isHttpsGithubUrl(url: string) {
+    return /^https:\/\/github\.com\//i.test(url.trim());
+  }
+
+  private getGitGithubAuthArgs() {
+    const token = this.getGithubToken();
+    if (!token) {
+      return { authArgs: '', redactedAuthArgs: '' };
+    }
+
+    // GitHub accepts basic auth where username can be x-access-token.
+    const basicAuth = Buffer.from(`x-access-token:${token}`, 'utf8').toString(
+      'base64',
+    );
+    return {
+      authArgs: `-c http.https://github.com/.extraheader="AUTHORIZATION: basic ${basicAuth}"`,
+      redactedAuthArgs:
+        '-c http.https://github.com/.extraheader="AUTHORIZATION: basic ***"',
+    };
+  }
+
+  private async runGit(cwd: string, args: string, redactedArgs?: string) {
     const cmd = `git ${args}`;
-    this.logger.log(this.i18n.t('build_prep.running', { cmd, cwd }));
+    const cmdForLog = `git ${redactedArgs ?? args}`;
+    this.logger.log(this.i18n.t('build_prep.running', { cmd: cmdForLog, cwd }));
     try {
       const { stdout, stderr } = await exec(cmd, {
         cwd,
@@ -81,9 +107,15 @@ export class BuildPreparationService {
       );
       const parent = path.dirname(repoDir);
       await fs.promises.mkdir(parent, { recursive: true });
+      const { authArgs, redactedAuthArgs } = this.isHttpsGithubUrl(repo.cloneUrl)
+        ? this.getGitGithubAuthArgs()
+        : { authArgs: '', redactedAuthArgs: '' };
+      const cloneArgs = `${authArgs} clone "${repo.cloneUrl}" "${repo.name}"`.trim();
+      const redactedCloneArgs = `${redactedAuthArgs} clone "${repo.cloneUrl}" "${repo.name}"`.trim();
       cloneOutput = await this.runGit(
         parent,
-        `clone ${repo.cloneUrl} ${repo.name}`,
+        cloneArgs,
+        redactedCloneArgs,
       );
     } else {
       this.logger.log(
@@ -92,7 +124,14 @@ export class BuildPreparationService {
           name: repo.name,
         }),
       );
-      fetchRes = await this.runGit(repoDir, 'fetch --all --prune');
+      const remoteUrlRes = await this.runGit(repoDir, 'remote get-url origin');
+      const remoteUrl = String(remoteUrlRes.stdout ?? '').trim();
+      const { authArgs, redactedAuthArgs } = this.isHttpsGithubUrl(remoteUrl)
+        ? this.getGitGithubAuthArgs()
+        : { authArgs: '', redactedAuthArgs: '' };
+      const fetchArgs = `${authArgs} fetch --all --prune`.trim();
+      const redactedFetchArgs = `${redactedAuthArgs} fetch --all --prune`.trim();
+      fetchRes = await this.runGit(repoDir, fetchArgs, redactedFetchArgs);
     }
 
     await fs.promises.rm(worktreeDir, { recursive: true, force: true });
