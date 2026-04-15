@@ -6,6 +6,7 @@ import { RunnerService } from './runner.service';
 import { BuildPreparationService } from './build-prep.service';
 import { NodeBuilderService } from './node-builder.service';
 import { AngularBuilderService } from './angular-builder.service';
+import { FlutterBuilderService } from './flutter-builder.service';
 import { GitHubService } from './github.service';
 import { BuildSyncService } from './build-sync.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -28,6 +29,7 @@ import { I18nModule } from '../../shared/src/i18n/i18n.module';
     BuildPreparationService,
     NodeBuilderService,
     AngularBuilderService,
+    FlutterBuilderService,
     GitHubService,
     BuildSyncService,
   ],

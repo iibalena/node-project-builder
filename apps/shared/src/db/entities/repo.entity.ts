@@ -43,6 +43,12 @@ export class RepoEntity extends BaseEntity {
   @Column({ name: 'github_installation_id', type: 'bigint', nullable: true })
   githubInstallationId: string | null;
 
+  @Column({ name: 'android_app_id', type: 'varchar', length: 255, nullable: true })
+  androidAppId: string | null;
+
+  @Column({ name: 'ios_bundle_id', type: 'varchar', length: 255, nullable: true })
+  iosBundleId: string | null;
+
   @OneToMany(() => BuildEntity, (b) => b.repo)
   builds: BuildEntity[];
 }

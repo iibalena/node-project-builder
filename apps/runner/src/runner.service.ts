@@ -11,6 +11,7 @@ import { BuildLogger } from './build-logger';
 import { BuildPreparationService } from './build-prep.service';
 import { NodeBuilderService } from './node-builder.service';
 import { AngularBuilderService } from './angular-builder.service';
+import { FlutterBuilderService } from './flutter-builder.service';
 import { BuildSyncService } from './build-sync.service';
 import { I18nService } from '../../shared/src/i18n/i18n.service';
 import { RepoType } from '../../shared/src/db/entities/repo-type.enum';
@@ -29,6 +30,7 @@ export class RunnerService implements OnModuleInit {
     private readonly buildPreparation: BuildPreparationService,
     private readonly nodeBuilder: NodeBuilderService,
     private readonly angularBuilder: AngularBuilderService,
+    private readonly flutterBuilder: FlutterBuilderService,
     private readonly buildSync: BuildSyncService,
     private readonly i18n: I18nService,
   ) {}
@@ -223,6 +225,8 @@ export class RunnerService implements OnModuleInit {
       const repoType = repo.type ?? RepoType.TYPESCRIPT;
       if (repoType === RepoType.ANGULAR) {
         await this.angularBuilder.build(build, prepared.repoDir);
+      } else if (repoType === RepoType.FLUTTER) {
+        await this.flutterBuilder.build(build, prepared.repoDir);
       } else if (repoType === RepoType.TYPESCRIPT) {
         await this.nodeBuilder.build(build, prepared.repoDir);
       } else {

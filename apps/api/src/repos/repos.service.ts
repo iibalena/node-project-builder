@@ -69,6 +69,8 @@ export class ReposService {
       isActive: true,
       installCommand: data.installCommand ?? null,
       useLegacyPeerDeps: data.useLegacyPeerDeps ?? false,
+      androidAppId: null,
+      iosBundleId: null,
     });
 
     let saved: RepoEntity;
