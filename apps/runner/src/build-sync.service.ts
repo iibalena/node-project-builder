@@ -17,6 +17,8 @@ import { I18nService } from '../../shared/src/i18n/i18n.service';
 export class BuildSyncService {
   private readonly logger = new Logger(BuildSyncService.name);
 
+  private readonly maxAttemptsPerSameSha = 2;
+
   constructor(
     @InjectRepository(RepoEntity)
     private readonly repoRepository: Repository<RepoEntity>,
@@ -115,18 +117,20 @@ export class BuildSyncService {
     const refKey = this.buildRefKey(args.ref, args.prNumber);
     const state = await this.getRefState(args.repo.id, refKey);
     if (!args.force && state && state.lastSha === args.sha) {
-      const hasSuccess = await this.buildRepository.findOne({
+      const prNumberCriteria =
+        args.prNumber === null ? IsNull() : args.prNumber;
+
+      const latestForSameSha = await this.buildRepository.findOne({
         where: {
           repoId: args.repo.id,
           ref: args.ref,
-          prNumber: args.prNumber === null ? IsNull() : args.prNumber,
+          prNumber: prNumberCriteria,
           commitSha: args.sha,
-          status: BuildStatus.SUCCESS,
         },
         order: { createdAt: 'DESC' },
       });
 
-      if (hasSuccess) {
+      if (latestForSameSha?.status === BuildStatus.SUCCESS) {
         this.logger.log(
           this.i18n.t('build_sync.skip_success', {
             owner: args.repo.owner,
@@ -138,12 +142,36 @@ export class BuildSyncService {
         return false;
       }
 
+      const attemptsForSameSha = await this.buildRepository.count({
+        where: {
+          repoId: args.repo.id,
+          ref: args.ref,
+          prNumber: prNumberCriteria,
+          commitSha: args.sha,
+        },
+      });
+
+      if (attemptsForSameSha >= this.maxAttemptsPerSameSha) {
+        this.logger.log(
+          this.i18n.t('build_sync.skip_same_sha_after_retry', {
+            owner: args.repo.owner,
+            name: args.repo.name,
+            ref: args.ref,
+            pr: args.prNumber ?? 'branch',
+            attempts: attemptsForSameSha,
+          }),
+        );
+        return false;
+      }
+
       this.logger.log(
         this.i18n.t('build_sync.retry_same_sha', {
           owner: args.repo.owner,
           name: args.repo.name,
           ref: args.ref,
           pr: args.prNumber ?? 'branch',
+          attempts: attemptsForSameSha,
+          maxAttempts: this.maxAttemptsPerSameSha,
         }),
       );
     }
