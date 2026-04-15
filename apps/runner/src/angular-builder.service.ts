@@ -1,13 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { BuildEntity, BuildStatus } from '@shared/db/entities/build.entity';
+import { BuildEntity, BuildStatus } from '../../shared/src/db/entities/build.entity';
 import { BuildLogger } from './build-logger';
 import { exec as _exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
-import { I18nService } from '@shared/i18n/i18n.service';
+import { I18nService } from '../../shared/src/i18n/i18n.service';
 
 const exec = promisify(_exec);
 

@@ -1,17 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, IsNull } from 'typeorm';
-import { RepoEntity } from '@shared/db/entities/repo.entity';
+import { RepoEntity } from '../../shared/src/db/entities/repo.entity';
 import {
   BuildEntity,
   BuildStatus,
   BuildTrigger,
-} from '@shared/db/entities/build.entity';
-import { BuildRefStateEntity } from '@shared/db/entities/build-ref-state.entity';
+} from '../../shared/src/db/entities/build.entity';
+import { BuildRefStateEntity } from '../../shared/src/db/entities/build-ref-state.entity';
 import { GitHubService } from './github.service';
 import * as fs from 'fs';
 import * as path from 'path';
-import { I18nService } from '@shared/i18n/i18n.service';
+import { I18nService } from '../../shared/src/i18n/i18n.service';
 
 @Injectable()
 export class BuildSyncService {

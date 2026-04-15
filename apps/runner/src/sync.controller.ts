@@ -7,10 +7,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { RepoEntity } from '@shared/db/entities/repo.entity';
+import { RepoEntity } from '../../shared/src/db/entities/repo.entity';
 import { BuildSyncService } from './build-sync.service';
 import { RunnerService } from './runner.service';
-import { I18nService } from '@shared/i18n/i18n.service';
+import { I18nService } from '../../shared/src/i18n/i18n.service';
 
 @Controller('sync')
 export class SyncController {

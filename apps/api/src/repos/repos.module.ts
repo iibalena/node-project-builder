@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { RepoEntity } from '@shared/db/entities/repo.entity';
+import { RepoEntity } from '../../../shared/src/db/entities/repo.entity';
 import { ReposController } from './repos.controller';
 import { ReposService } from './repos.service';
 import { GitHubRepoService } from './github-repo.service';

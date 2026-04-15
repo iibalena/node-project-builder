@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Min } from 'class-validator';
-import { BuildStatus } from '@shared/db/entities/build.entity';
+import { BuildStatus } from '../../../../shared/src/db/entities/build.entity';
 
 export class ListBuildsDto {
   @IsOptional()

@@ -5,15 +5,15 @@ import {
   BuildEntity,
   BuildStatus,
   BuildTrigger,
-} from '@shared/db/entities/build.entity';
-import { RepoEntity } from '@shared/db/entities/repo.entity';
+} from '../../shared/src/db/entities/build.entity';
+import { RepoEntity } from '../../shared/src/db/entities/repo.entity';
 import { BuildLogger } from './build-logger';
 import { BuildPreparationService } from './build-prep.service';
 import { NodeBuilderService } from './node-builder.service';
 import { AngularBuilderService } from './angular-builder.service';
 import { BuildSyncService } from './build-sync.service';
-import { I18nService } from '@shared/i18n/i18n.service';
-import { RepoType } from '@shared/db/entities/repo-type.enum';
+import { I18nService } from '../../shared/src/i18n/i18n.service';
+import { RepoType } from '../../shared/src/db/entities/repo-type.enum';
 
 @Injectable()
 export class RunnerService implements OnModuleInit {

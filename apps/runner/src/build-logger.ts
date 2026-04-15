@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { BuildEntity } from '@shared/db/entities/build.entity';
+import { BuildEntity } from '../../shared/src/db/entities/build.entity';
 
 export class BuildLogger {
   private refLabel: string;

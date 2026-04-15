@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { BuildEntity } from '@shared/db/entities/build.entity';
+import { BuildEntity } from '../../../shared/src/db/entities/build.entity';
 import { ListBuildsDto } from './dto/list-builds.dto';
 
 @Injectable()

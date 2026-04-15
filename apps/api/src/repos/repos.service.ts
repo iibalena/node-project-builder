@@ -1,12 +1,12 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
-import { RepoEntity } from '@shared/db/entities/repo.entity';
+import { RepoEntity } from '../../../shared/src/db/entities/repo.entity';
 import { SyncService } from '../sync/sync.service';
 import { GitHubRepoService } from './github-repo.service';
 import { CreateRepoDto } from './dto/create-repo.dto';
 import { UpdateRepoDto } from './dto/update-repo.dto';
-import { I18nService } from '@shared/i18n/i18n.service';
+import { I18nService } from '../../../shared/src/i18n/i18n.service';
 
 @Injectable()
 export class ReposService {

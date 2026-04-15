@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import https from 'node:https';
 import dns from 'node:dns/promises';
-import { I18nService } from '@shared/i18n/i18n.service';
+import { I18nService } from '../../../shared/src/i18n/i18n.service';
 
 @Injectable()
 export class GitHubRepoService {

@@ -1,5 +1,5 @@
 import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { RepoType } from '@shared/db/entities/repo-type.enum';
+import { RepoType } from '../../../../shared/src/db/entities/repo-type.enum';
 
 export class UpdateRepoDto {
   @IsOptional()
