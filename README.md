@@ -82,6 +82,111 @@ Check out a few resources that may come in handy when working with NestJS:
 - To force English logs/messages, set `APP_LANG=en-US` in `.env`.
 - To force Portuguese explicitly, set `APP_LANG=pt-BR`.
 
+## Teste manual do webhook GitHub App
+
+Objetivo deste teste: validar localmente assinatura HMAC SHA-256, diferenciar eventos de GitHub App vs webhook antigo de repositório e verificar logs de aceito/ignorado/rejeitado.
+
+1. Configure a secret do webhook:
+
+```bash
+set GITHUB_WEBHOOK_SECRET=dev-webhook-secret
+```
+
+2. Suba a API:
+
+```bash
+pnpm run start:api:dev
+```
+
+3. (Opcional) verifique health do endpoint:
+
+```bash
+curl -X GET http://localhost:3000/github/webhook/health
+```
+
+4. Exemplo de payload `push` com `installation.id` (GitHub App):
+
+```json
+{
+  "ref": "refs/heads/main",
+  "after": "1111111111111111111111111111111111111111",
+  "repository": {
+    "full_name": "acme/my-repo",
+    "name": "my-repo",
+    "owner": {
+      "login": "acme"
+    }
+  },
+  "installation": {
+    "id": 12345678
+  }
+}
+```
+
+5. Gere assinatura HMAC SHA-256 com OpenSSL (PowerShell):
+
+```powershell
+$secret = "dev-webhook-secret"
+$body = Get-Content -Raw .\payload-app.json
+$sig = "sha256=" + (([System.BitConverter]::ToString(
+  [System.Security.Cryptography.HMACSHA256]::new([System.Text.Encoding]::UTF8.GetBytes($secret)).ComputeHash(
+    [System.Text.Encoding]::UTF8.GetBytes($body)
+  )
+)).Replace("-", "").ToLower())
+$sig
+```
+
+Alternativa com OpenSSL (bash):
+
+```bash
+SIG="sha256=$(openssl dgst -sha256 -hmac "$GITHUB_WEBHOOK_SECRET" payload-app.json | sed 's/^.* //')"
+echo "$SIG"
+```
+
+6. Envie `curl` com assinatura valida e `installation.id` (deve processar):
+
+```bash
+curl -X POST http://localhost:3000/github/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-GitHub-Event: push" \
+  -H "X-GitHub-Delivery: manual-delivery-1" \
+  -H "X-Hub-Signature-256: $SIG" \
+  --data-binary @payload-app.json
+```
+
+Resultado esperado: HTTP `200` e logs com `source=github-app` e status de webhook aceito/processado.
+
+7. Exemplo de payload sem `installation.id` (simula webhook antigo de repo):
+
+```json
+{
+  "ref": "refs/heads/main",
+  "after": "2222222222222222222222222222222222222222",
+  "repository": {
+    "full_name": "acme/my-repo",
+    "name": "my-repo",
+    "owner": {
+      "login": "acme"
+    }
+  }
+}
+```
+
+Envie com assinatura valida para esse payload e espere HTTP `200` com log de webhook ignorado (`source=repo-webhook`).
+
+8. Teste assinatura invalida:
+
+```bash
+curl -X POST http://localhost:3000/github/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-GitHub-Event: push" \
+  -H "X-GitHub-Delivery: manual-delivery-invalid" \
+  -H "X-Hub-Signature-256: sha256=invalid" \
+  --data-binary @payload-app.json
+```
+
+Resultado esperado: HTTP `401` e log de rejeicao por assinatura.
+
 - Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
 - For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
 - To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).

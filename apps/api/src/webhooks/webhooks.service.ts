@@ -3,14 +3,14 @@ import { Injectable } from '@nestjs/common';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { RepoEntity } from '@shared/db/entities/repo.entity';
+import { RepoEntity } from '../../../shared/src/db/entities/repo.entity';
 import {
   BuildEntity,
   BuildStatus,
   BuildTrigger,
-} from '@shared/db/entities/build.entity';
-import { BuildRefStateEntity } from '@shared/db/entities/build-ref-state.entity';
-import { I18nService } from '@shared/i18n/i18n.service';
+} from '../../../shared/src/db/entities/build.entity';
+import { BuildRefStateEntity } from '../../../shared/src/db/entities/build-ref-state.entity';
+import { I18nService } from '../../../shared/src/i18n/i18n.service';
 
 type GithubHeaders = {
   'x-hub-signature-256'?: string;
@@ -115,12 +115,15 @@ export class WebhooksService {
     const sig = headers['x-hub-signature-256'];
     if (!sig?.startsWith('sha256=')) return false;
 
+    const receivedHex = sig.slice('sha256='.length).trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(receivedHex)) return false;
+
     const expected = crypto
       .createHmac('sha256', secret)
       .update(rawBody)
       .digest('hex');
 
-    const a = Buffer.from(sig.replace('sha256=', ''), 'hex');
+    const a = Buffer.from(receivedHex, 'hex');
     const b = Buffer.from(expected, 'hex');
 
     if (a.length !== b.length) return false;
@@ -132,23 +135,6 @@ export class WebhooksService {
     headers: GithubHeaders;
     payload: any;
   }): Promise<{ ok: true; ignored?: boolean }> {
-    const source = this.isFromGitHubApp(args.payload)
-      ? 'github-app'
-      : 'repo-webhook';
-    this.logger.log(this.i18n.t('webhook.source', { source }));
-
-    if (!this.shouldProcessWebhook(args.payload)) {
-      return { ok: true, ignored: true };
-    }
-
-    const ok = this.verifyGithubSignature(args.rawBody, args.headers);
-    if (!ok) {
-      this.logger.error(
-        this.i18n.t('webhook.signature_invalid'),
-      );
-      return { ok: true, ignored: true };
-    }
-
     const event = args.headers['x-github-event'] ?? '';
 
     const { owner: repoOwner, name: repoName } = this.resolveRepository(
