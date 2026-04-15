@@ -21,6 +21,7 @@ export class RunnerService implements OnModuleInit {
   private readonly logger = new Logger(RunnerService.name);
   private interval: NodeJS.Timeout;
   private syncInterval: NodeJS.Timeout;
+  private worktreeCleanupInterval: NodeJS.Timeout;
   private syncRunning = false;
   private buildProcessing = false;
 
@@ -40,6 +41,9 @@ export class RunnerService implements OnModuleInit {
     const syncOnStart =
       String(process.env.SYNC_ON_START ?? 'true').toLowerCase() !== 'false';
     const syncIntervalMs = Number(process.env.SYNC_INTERVAL_MS ?? 86400000);
+    const worktreeCleanupIntervalMs = Number(
+      process.env.WORKTREE_CLEANUP_INTERVAL_MS ?? 3600000,
+    );
 
     this.logger.log(this.i18n.t('runner.started'));
     this.logger.log(this.i18n.t('runner.polling_interval', { interval: intervalMs }));
@@ -64,6 +68,35 @@ export class RunnerService implements OnModuleInit {
     this.syncInterval = setInterval(() => {
       this.runSync().catch((err) => this.logger.error(err));
     }, syncIntervalMs);
+
+    this.logger.log(
+      this.i18n.t('runner.worktree_cleanup_interval', {
+        interval: worktreeCleanupIntervalMs,
+      }),
+    );
+    this.worktreeCleanupInterval = setInterval(() => {
+      this.runGlobalWorktreeCleanup().catch((err) => this.logger.error(err));
+    }, worktreeCleanupIntervalMs);
+  }
+
+  private async runGlobalWorktreeCleanup() {
+    this.logger.log(this.i18n.t('runner.worktree_cleanup_started'));
+    try {
+      const result = await this.buildPreparation.cleanupStaleWorktreesGlobal();
+      this.logger.log(
+        this.i18n.t('runner.worktree_cleanup_finished', {
+          scanned: result.scanned,
+          removed: result.removed,
+          locked: result.locked,
+        }),
+      );
+    } catch (err: any) {
+      this.logger.error(
+        this.i18n.t('runner.worktree_cleanup_failed', {
+          error: err?.message ?? String(err),
+        }),
+      );
+    }
   }
 
   private async runSync(options?: { ignoreCooldown?: boolean }) {

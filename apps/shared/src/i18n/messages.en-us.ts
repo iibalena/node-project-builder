@@ -54,6 +54,10 @@ export const messagesEnUs: Record<string, string> = {
   'runner.failed': 'Build {buildId} failed: {message}',
   'runner.worktree_removed': 'Worktree removed {worktreeDir}',
   'runner.worktree_remove_failed': 'Failed to remove worktree: {error}',
+  'runner.worktree_cleanup_interval': 'Global worktree cleanup every {interval}ms',
+  'runner.worktree_cleanup_started': 'Starting global cleanup of pending worktrees',
+  'runner.worktree_cleanup_finished': 'Global cleanup finished: scanned={scanned} removed={removed} locked={locked}',
+  'runner.worktree_cleanup_failed': 'Global worktree cleanup failed: {error}',
   'runner.error_block': '--- runner error ---\n{message}',
   'runner.unsupported_repo_type': 'Unsupported repository type: {type}',
 
@@ -147,5 +151,9 @@ export const messagesEnUs: Record<string, string> = {
   'build_prep.running': 'Running: {cmd} (cwd={cwd})',
   'build_prep.cloning': 'Cloning {owner}/{name} into {repoDir}',
   'build_prep.fetching': 'Updating {owner}/{name} via git fetch',
-  'build_prep.creating_worktree': 'Creating worktree build={buildId} ref={ref} at {worktreeDir}'
+  'build_prep.creating_worktree': 'Creating worktree build={buildId} ref={ref} at {worktreeDir}',
+  'build_prep.cleanup_retry': 'Worktree is busy, cleanup retry {attempt}/{total}: {worktreeDir}',
+  'build_prep.cleanup_deferred': 'Temporary failure while cleaning worktree (will retry on next build of this repo): {worktreeDir} error={error}',
+  'build_prep.cleanup_pending_removed': 'Removed pending worktree: {worktreeDir}',
+  'build_prep.cleanup_pending_locked': 'Pending worktree is still locked: {worktreeDir} error={error}'
 };

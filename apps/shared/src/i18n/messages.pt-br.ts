@@ -54,6 +54,10 @@ export const messagesPtBr: Record<string, string> = {
   'runner.failed': 'Build {buildId} falhou: {message}',
   'runner.worktree_removed': 'Worktree removido {worktreeDir}',
   'runner.worktree_remove_failed': 'Falha ao remover worktree: {error}',
+  'runner.worktree_cleanup_interval': 'Limpeza global de worktrees a cada {interval}ms',
+  'runner.worktree_cleanup_started': 'Iniciando limpeza global de worktrees pendentes',
+  'runner.worktree_cleanup_finished': 'Limpeza global concluida: varridos={scanned} removidos={removed} bloqueados={locked}',
+  'runner.worktree_cleanup_failed': 'Falha na limpeza global de worktrees: {error}',
   'runner.error_block': '--- runner error ---\n{message}',
   'runner.unsupported_repo_type': 'Tipo de repositorio nao suportado: {type}',
 
@@ -147,5 +151,9 @@ export const messagesPtBr: Record<string, string> = {
   'build_prep.running': 'Executando: {cmd} (cwd={cwd})',
   'build_prep.cloning': 'Clonando {owner}/{name} em {repoDir}',
   'build_prep.fetching': 'Atualizando {owner}/{name} via git fetch',
-  'build_prep.creating_worktree': 'Criando worktree build={buildId} ref={ref} em {worktreeDir}'
+  'build_prep.creating_worktree': 'Criando worktree build={buildId} ref={ref} em {worktreeDir}',
+  'build_prep.cleanup_retry': 'Worktree ocupado, tentativa de limpeza {attempt}/{total}: {worktreeDir}',
+  'build_prep.cleanup_deferred': 'Falha temporaria ao limpar worktree (nova tentativa no proximo build do repo): {worktreeDir} erro={error}',
+  'build_prep.cleanup_pending_removed': 'Worktree pendente removido: {worktreeDir}',
+  'build_prep.cleanup_pending_locked': 'Worktree pendente ainda bloqueado: {worktreeDir} erro={error}'
 };

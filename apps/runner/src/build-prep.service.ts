@@ -12,6 +12,10 @@ const exec = promisify(_exec);
 export class BuildPreparationService {
   private readonly logger = new Logger(BuildPreparationService.name);
 
+  private readonly cleanupRetries = 4;
+
+  private readonly cleanupRetryDelayMs = 500;
+
   constructor(private readonly i18n: I18nService) {}
 
   private getWorkdirRoot() {
@@ -30,6 +34,19 @@ export class BuildPreparationService {
       repo.name,
       String(buildId),
     );
+  }
+
+  private getRepoWorktreesDir(repo: RepoEntity) {
+    return path.join(
+      this.getWorkdirRoot(),
+      '_worktrees',
+      repo.owner,
+      repo.name,
+    );
+  }
+
+  private getAllWorktreesRoot() {
+    return path.join(this.getWorkdirRoot(), '_worktrees');
   }
 
   private getGithubToken() {
@@ -77,12 +94,93 @@ export class BuildPreparationService {
     }
   }
 
+  private isFileLockError(err: unknown) {
+    const code = String((err as any)?.code ?? '');
+    const message = String((err as any)?.message ?? err ?? '').toUpperCase();
+    return (
+      code === 'EBUSY' ||
+      code === 'EPERM' ||
+      message.includes('RESOURCE BUSY') ||
+      message.includes('EBUSY')
+    );
+  }
+
+  private async wait(ms: number) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async removeDirWithRetries(worktreeDir: string) {
+    for (let attempt = 1; attempt <= this.cleanupRetries; attempt += 1) {
+      try {
+        await fs.promises.rm(worktreeDir, { recursive: true, force: true });
+        return;
+      } catch (err: unknown) {
+        const isLock = this.isFileLockError(err);
+        const isLastAttempt = attempt === this.cleanupRetries;
+        if (!isLock || isLastAttempt) {
+          throw err;
+        }
+
+        this.logger.warn(
+          this.i18n.t('build_prep.cleanup_retry', {
+            attempt,
+            total: this.cleanupRetries,
+            worktreeDir,
+          }),
+        );
+        await this.wait(this.cleanupRetryDelayMs * attempt);
+      }
+    }
+  }
+
+  private async cleanupPendingWorktrees(repo: RepoEntity, currentBuildId: number) {
+    const repoWorktreesDir = this.getRepoWorktreesDir(repo);
+    const exists = await fs.promises
+      .access(repoWorktreesDir)
+      .then(() => true)
+      .catch(() => false);
+
+    if (!exists) return;
+
+    const entries = await fs.promises.readdir(repoWorktreesDir, {
+      withFileTypes: true,
+    });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === String(currentBuildId)) continue;
+
+      const staleWorktreeDir = path.join(repoWorktreesDir, entry.name);
+      try {
+        await this.removeDirWithRetries(staleWorktreeDir);
+        this.logger.log(
+          this.i18n.t('build_prep.cleanup_pending_removed', {
+            worktreeDir: staleWorktreeDir,
+          }),
+        );
+      } catch (err: unknown) {
+        if (this.isFileLockError(err)) {
+          this.logger.warn(
+            this.i18n.t('build_prep.cleanup_pending_locked', {
+              worktreeDir: staleWorktreeDir,
+              error: (err as any)?.message ?? String(err),
+            }),
+          );
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
   async prepare(repo: RepoEntity, ref: string, buildId: number) {
     const repoDir = this.getRepoDir(repo);
     const worktreeDir = this.getWorktreeDir(repo, buildId);
 
     // ensure parent exists
     await fs.promises.mkdir(path.dirname(repoDir), { recursive: true });
+
+    await this.cleanupPendingWorktrees(repo, buildId);
 
     const exists = await fs.promises
       .access(repoDir)
@@ -184,6 +282,73 @@ export class BuildPreparationService {
 
   async cleanupWorktree(baseDir: string, worktreeDir: string) {
     await this.runGit(baseDir, `worktree remove --force "${worktreeDir}"`);
-    await fs.promises.rm(worktreeDir, { recursive: true, force: true });
+    try {
+      await this.removeDirWithRetries(worktreeDir);
+    } catch (err: unknown) {
+      if (this.isFileLockError(err)) {
+        this.logger.warn(
+          this.i18n.t('build_prep.cleanup_deferred', {
+            worktreeDir,
+            error: (err as any)?.message ?? String(err),
+          }),
+        );
+        return;
+      }
+      throw err;
+    }
+  }
+
+  async cleanupStaleWorktreesGlobal() {
+    const root = this.getAllWorktreesRoot();
+    const exists = await fs.promises
+      .access(root)
+      .then(() => true)
+      .catch(() => false);
+    if (!exists) {
+      return { scanned: 0, removed: 0, locked: 0 };
+    }
+
+    const owners = await fs.promises.readdir(root, { withFileTypes: true });
+    let scanned = 0;
+    let removed = 0;
+    let locked = 0;
+
+    for (const ownerDir of owners) {
+      if (!ownerDir.isDirectory()) continue;
+      const ownerPath = path.join(root, ownerDir.name);
+      const repos = await fs.promises.readdir(ownerPath, { withFileTypes: true });
+
+      for (const repoDir of repos) {
+        if (!repoDir.isDirectory()) continue;
+        const repoPath = path.join(ownerPath, repoDir.name);
+        const worktrees = await fs.promises.readdir(repoPath, {
+          withFileTypes: true,
+        });
+
+        for (const worktreeDir of worktrees) {
+          if (!worktreeDir.isDirectory()) continue;
+          const fullPath = path.join(repoPath, worktreeDir.name);
+          scanned += 1;
+          try {
+            await this.removeDirWithRetries(fullPath);
+            removed += 1;
+          } catch (err: unknown) {
+            if (this.isFileLockError(err)) {
+              locked += 1;
+              this.logger.warn(
+                this.i18n.t('build_prep.cleanup_pending_locked', {
+                  worktreeDir: fullPath,
+                  error: (err as any)?.message ?? String(err),
+                }),
+              );
+              continue;
+            }
+            throw err;
+          }
+        }
+      }
+    }
+
+    return { scanned, removed, locked };
   }
 }
