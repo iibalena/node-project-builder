@@ -31,6 +31,7 @@ import { ExecutePublicationDto } from './dto/execute-publication.dto';
 import { I18nService } from '../../../shared/src/i18n/i18n.service';
 import { GooglePlayPublisherService } from './google-play-publisher.service';
 import { GitHubRepoService } from '../repos/github-repo.service';
+import { TaskNotificationService } from './task-notification.service';
 
 @Injectable()
 export class PublicationsService {
@@ -49,6 +50,7 @@ export class PublicationsService {
     private readonly i18n: I18nService,
     private readonly googlePlayPublisher: GooglePlayPublisherService,
     private readonly githubRepoService: GitHubRepoService,
+    private readonly taskNotification: TaskNotificationService,
   ) {}
 
   private getGooglePlayServiceAccountPath() {
@@ -489,6 +491,23 @@ export class PublicationsService {
                   prNumber: build.prNumber,
                   error: commentErr?.message ?? String(commentErr),
                 }),
+              );
+            }
+
+            try {
+              if (publication.downloadUrl && publication.expiresAt) {
+                await this.taskNotification.notifyBuildAvailable({
+                  owner: repo.owner,
+                  name: repo.name,
+                  branch: build.ref,
+                  prNumber: build.prNumber,
+                  downloadUrl: publication.downloadUrl,
+                  expiresAt: publication.expiresAt,
+                });
+              }
+            } catch (notifyErr: any) {
+              this.logger.warn(
+                `Task notification error: ${notifyErr?.message ?? String(notifyErr)}`,
               );
             }
           }

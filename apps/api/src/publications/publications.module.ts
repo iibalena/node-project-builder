@@ -9,6 +9,7 @@ import { RepoEntity } from '../../../shared/src/db/entities/repo.entity';
 import { I18nModule } from '../../../shared/src/i18n/i18n.module';
 import { GooglePlayPublisherService } from './google-play-publisher.service';
 import { GitHubRepoService } from '../repos/github-repo.service';
+import { TaskNotificationService } from './task-notification.service';
 
 @Module({
   imports: [
@@ -21,6 +22,11 @@ import { GitHubRepoService } from '../repos/github-repo.service';
     ]),
   ],
   controllers: [PublicationsController],
-  providers: [PublicationsService, GooglePlayPublisherService, GitHubRepoService],
+  providers: [
+    PublicationsService,
+    GooglePlayPublisherService,
+    GitHubRepoService,
+    TaskNotificationService,
+  ],
 })
 export class PublicationsModule {}
