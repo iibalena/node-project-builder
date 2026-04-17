@@ -12,6 +12,11 @@ export enum PublicationProvider {
   GOOGLE_PLAY = 'google-play',
 }
 
+export enum PublicationDistributionType {
+  INTERNAL_APP_SHARING = 'internal-app-sharing',
+  TRACK = 'track',
+}
+
 export enum PublicationStatus {
   PENDING = 'PENDING',
   SUCCESS = 'SUCCESS',
@@ -19,7 +24,14 @@ export enum PublicationStatus {
   SKIPPED = 'SKIPPED',
 }
 
-@Index(['repositoryId', 'platform', 'track', 'commitSha', 'artifactHash'])
+@Index([
+  'repositoryId',
+  'platform',
+  'distributionType',
+  'track',
+  'commitSha',
+  'artifactHash',
+])
 @Entity({ name: 'publications' })
 export class PublicationEntity extends BaseEntity {
   @Column({ name: 'build_id', type: 'integer' })
@@ -41,8 +53,16 @@ export class PublicationEntity extends BaseEntity {
   @Column({ type: 'varchar', length: 20 })
   platform: PublicationPlatform;
 
-  @Column({ type: 'varchar', length: 40 })
-  track: string;
+  @Column({
+    name: 'distribution_type',
+    type: 'varchar',
+    length: 40,
+    default: PublicationDistributionType.TRACK,
+  })
+  distributionType: PublicationDistributionType;
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  track: string | null;
 
   @Column({ name: 'commit_sha', type: 'varchar', length: 60 })
   commitSha: string;
@@ -58,6 +78,15 @@ export class PublicationEntity extends BaseEntity {
 
   @Column({ name: 'external_release_id', type: 'varchar', length: 255, nullable: true })
   externalReleaseId: string | null;
+
+  @Column({ name: 'download_url', type: 'text', nullable: true })
+  downloadUrl: string | null;
+
+  @Column({ name: 'certificate_fingerprint', type: 'varchar', length: 255, nullable: true })
+  certificateFingerprint: string | null;
+
+  @Column({ name: 'expires_at', type: 'timestamptz', nullable: true })
+  expiresAt: Date | null;
 
   @Column({ type: 'varchar', length: 20 })
   status: PublicationStatus;

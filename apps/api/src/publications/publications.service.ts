@@ -1,15 +1,22 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import * as fs from 'fs';
 import { createHash } from 'crypto';
-import { BuildEntity, BuildStatus } from '../../../shared/src/db/entities/build.entity';
+import {
+  BuildEntity,
+  BuildStatus,
+  BuildTrigger,
+} from '../../../shared/src/db/entities/build.entity';
 import { RepoEntity } from '../../../shared/src/db/entities/repo.entity';
 import {
+  PublicationDistributionType,
   PublicationEntity,
   PublicationPlatform,
   PublicationProvider,
@@ -23,9 +30,12 @@ import { ListPublicationsDto } from './dto/list-publications.dto';
 import { ExecutePublicationDto } from './dto/execute-publication.dto';
 import { I18nService } from '../../../shared/src/i18n/i18n.service';
 import { GooglePlayPublisherService } from './google-play-publisher.service';
+import { GitHubRepoService } from '../repos/github-repo.service';
 
 @Injectable()
 export class PublicationsService {
+  private readonly logger = new Logger(PublicationsService.name);
+
   constructor(
     @InjectRepository(BuildEntity)
     private readonly buildRepository: Repository<BuildEntity>,
@@ -38,6 +48,7 @@ export class PublicationsService {
     private readonly dataSource: DataSource,
     private readonly i18n: I18nService,
     private readonly googlePlayPublisher: GooglePlayPublisherService,
+    private readonly githubRepoService: GitHubRepoService,
   ) {}
 
   private getGooglePlayServiceAccountPath() {
@@ -47,6 +58,60 @@ export class PublicationsService {
   private normalizeTrack(track?: string) {
     const value = String(track ?? 'internal').trim().toLowerCase();
     return value.length > 0 ? value : 'internal';
+  }
+
+  private isMainOrMasterRef(ref?: string | null) {
+    const value = String(ref ?? '')
+      .trim()
+      .toLowerCase()
+      .replace('refs/heads/', '');
+
+    return value === 'main' || value === 'master';
+  }
+
+  private isPrBuild(build: BuildEntity) {
+    return (
+      build.trigger === BuildTrigger.PR ||
+      (build.prNumber != null && !this.isMainOrMasterRef(build.ref))
+    );
+  }
+
+  private resolveDistributionForBuild(args: {
+    build: BuildEntity;
+    requestedTrack?: string;
+  }) {
+    if (this.isPrBuild(args.build)) {
+      return {
+        distributionType: PublicationDistributionType.INTERNAL_APP_SHARING,
+        track: null,
+      };
+    }
+
+    return {
+      distributionType: PublicationDistributionType.TRACK,
+      track: this.normalizeTrack(args.requestedTrack),
+    };
+  }
+
+  private buildPrCommentMessage(args: {
+    build: BuildEntity;
+    downloadUrl: string;
+    expiresAt?: Date | null;
+  }) {
+    const commitShort = String(args.build.commitSha ?? '').slice(0, 7);
+    const expiresText = args.expiresAt
+      ? args.expiresAt.toISOString().slice(0, 10)
+      : '60 dias';
+
+    return [
+      'Build disponivel para testes:',
+      '',
+      `Branch: ${args.build.ref}`,
+      `Commit: ${commitShort}`,
+      `Download: ${args.downloadUrl}`,
+      '',
+      `Observacao: link valido ate ${expiresText}`,
+    ].join('\n');
   }
 
   private async hashFileSha256(filePath: string) {
@@ -89,21 +154,35 @@ export class PublicationsService {
   private async findSuccessfulPublication(args: {
     repositoryId: number;
     platform: PublicationPlatform;
-    track: string;
+    distributionType: PublicationDistributionType;
+    track: string | null;
     commitSha: string;
     artifactHash: string;
   }) {
-    return this.publicationRepository.findOne({
-      where: {
+    const qb = this.publicationRepository
+      .createQueryBuilder('p')
+      .where('p.repository_id = :repositoryId', {
         repositoryId: args.repositoryId,
-        platform: args.platform,
-        track: args.track,
-        commitSha: args.commitSha,
+      })
+      .andWhere('p.platform = :platform', { platform: args.platform })
+      .andWhere('p.distribution_type = :distributionType', {
+        distributionType: args.distributionType,
+      })
+      .andWhere('p.commit_sha = :commitSha', { commitSha: args.commitSha })
+      .andWhere('p.artifact_hash = :artifactHash', {
         artifactHash: args.artifactHash,
-        status: PublicationStatus.SUCCESS,
-      },
-      order: { createdAt: 'DESC' },
-    });
+      })
+      .andWhere('p.status = :status', { status: PublicationStatus.SUCCESS })
+      .orderBy('p.createdAt', 'DESC')
+      .limit(1);
+
+    if (args.track == null) {
+      qb.andWhere('p.track IS NULL');
+    } else {
+      qb.andWhere('p.track = :track', { track: args.track });
+    }
+
+    return qb.getOne();
   }
 
   private async reserveVersionCode(args: {
@@ -146,13 +225,17 @@ export class PublicationsService {
   async plan(dto: PlanPublicationDto) {
     const build = await this.getBuildWithArtifact(dto.buildId);
     const platform = dto.platform ?? PublicationPlatform.ANDROID;
-    const track = this.normalizeTrack(dto.track);
+    const distribution = this.resolveDistributionForBuild({
+      build,
+      requestedTrack: dto.track,
+    });
     const artifactHash = await this.hashFileSha256(build.artifactPath!);
 
     const existing = await this.findSuccessfulPublication({
       repositoryId: build.repoId,
       platform,
-      track,
+      distributionType: distribution.distributionType,
+      track: distribution.track,
       commitSha: build.commitSha,
       artifactHash,
     });
@@ -173,10 +256,13 @@ export class PublicationsService {
       ok: true,
       alreadyPublished: false,
       skipUpload: false,
-      skipVersionCode: false,
+      skipVersionCode:
+        distribution.distributionType ===
+        PublicationDistributionType.INTERNAL_APP_SHARING,
       repositoryId: build.repoId,
       platform,
-      track,
+      distributionType: distribution.distributionType,
+      track: distribution.track,
       commitSha: build.commitSha,
       artifactHash,
       message: this.i18n.t('publication.ready_to_publish'),
@@ -186,14 +272,18 @@ export class PublicationsService {
   async create(dto: CreatePublicationDto) {
     const build = await this.getBuildWithArtifact(dto.buildId);
     const platform = dto.platform ?? PublicationPlatform.ANDROID;
-    const track = this.normalizeTrack(dto.track);
+    const distribution = this.resolveDistributionForBuild({
+      build,
+      requestedTrack: dto.track,
+    });
     const provider = dto.provider ?? PublicationProvider.GOOGLE_PLAY;
     const artifactHash = await this.hashFileSha256(build.artifactPath!);
 
     const existing = await this.findSuccessfulPublication({
       repositoryId: build.repoId,
       platform,
-      track,
+      distributionType: distribution.distributionType,
+      track: distribution.track,
       commitSha: build.commitSha,
       artifactHash,
     });
@@ -210,24 +300,31 @@ export class PublicationsService {
       };
     }
 
-    // Reserve versionCode only when publication is actually being created.
-    const versionCode = await this.reserveVersionCode({
-      repositoryId: build.repoId,
-      platform,
-      track,
-    });
+    const shouldReserveVersionCode =
+      distribution.distributionType === PublicationDistributionType.TRACK;
+    const versionCode = shouldReserveVersionCode
+      ? await this.reserveVersionCode({
+          repositoryId: build.repoId,
+          platform,
+          track: distribution.track ?? 'internal',
+        })
+      : null;
 
     const publication = await this.publicationRepository.save(
       this.publicationRepository.create({
         buildId: build.id,
         repositoryId: build.repoId,
         platform,
-        track,
+        distributionType: distribution.distributionType,
+        track: distribution.track,
         commitSha: build.commitSha,
         artifactHash,
         versionCode,
         provider,
         externalReleaseId: null,
+        downloadUrl: null,
+        certificateFingerprint: null,
+        expiresAt: null,
         status: PublicationStatus.PENDING,
       }),
     );
@@ -236,10 +333,14 @@ export class PublicationsService {
       ok: true,
       alreadyPublished: false,
       skipUpload: false,
-      skipVersionCode: false,
+      skipVersionCode: !shouldReserveVersionCode,
       publicationId: publication.id,
       versionCode,
-      message: this.i18n.t('publication.created_pending'),
+      distributionType: publication.distributionType,
+      track: publication.track,
+      message: shouldReserveVersionCode
+        ? this.i18n.t('publication.created_pending')
+        : this.i18n.t('publication.created_pending_internal_sharing'),
     };
   }
 
@@ -263,9 +364,19 @@ export class PublicationsService {
 
     const build = await this.getBuildWithArtifact(publication.buildId);
 
+    this.logger.log(
+      this.i18n.t('publication.execute_start', {
+        publicationId: publication.id,
+        distributionType: publication.distributionType,
+        artifactPath: build.artifactPath ?? 'n/a',
+        artifactHash: publication.artifactHash,
+      }),
+    );
+
     const existing = await this.findSuccessfulPublication({
       repositoryId: publication.repositoryId,
       platform: publication.platform,
+      distributionType: publication.distributionType,
       track: publication.track,
       commitSha: publication.commitSha,
       artifactHash: publication.artifactHash,
@@ -314,12 +425,95 @@ export class PublicationsService {
           );
         }
 
+        if (
+          publication.distributionType ===
+          PublicationDistributionType.INTERNAL_APP_SHARING
+        ) {
+          const internalSharingResult =
+            await this.googlePlayPublisher.uploadInternalSharingArtifact(
+              {
+                serviceAccountJsonPath,
+                packageName,
+                artifactPath: build.artifactPath!,
+              },
+              { dryRun: dto.dryRun },
+            );
+
+          const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+          publication.externalReleaseId =
+            internalSharingResult.externalReleaseId ?? publication.externalReleaseId;
+          publication.downloadUrl = internalSharingResult.downloadUrl;
+          publication.certificateFingerprint =
+            internalSharingResult.certificateFingerprint;
+          publication.expiresAt = expiresAt;
+          publication.versionCode = null;
+          publication.status = PublicationStatus.SUCCESS;
+          await this.publicationRepository.save(publication);
+
+          this.logger.log(
+            this.i18n.t('publication.execute_result', {
+              publicationId: publication.id,
+              distributionType: publication.distributionType,
+              artifactPath: build.artifactPath ?? 'n/a',
+              artifactHash: publication.artifactHash,
+              downloadUrl: publication.downloadUrl ?? 'n/a',
+            }),
+          );
+
+          const prCommentMessage = publication.downloadUrl
+            ? this.buildPrCommentMessage({
+                build,
+                downloadUrl: publication.downloadUrl,
+                expiresAt: publication.expiresAt,
+              })
+            : null;
+
+          if (prCommentMessage && build.prNumber != null && !internalSharingResult.dryRun) {
+            try {
+              await this.githubRepoService.postPrComment(
+                repo.owner,
+                repo.name,
+                build.prNumber,
+                prCommentMessage,
+              );
+              this.logger.log(
+                this.i18n.t('publication.pr_comment_posted', {
+                  publicationId: publication.id,
+                  prNumber: build.prNumber,
+                }),
+              );
+            } catch (commentErr: any) {
+              this.logger.warn(
+                this.i18n.t('publication.pr_comment_failed', {
+                  publicationId: publication.id,
+                  prNumber: build.prNumber,
+                  error: commentErr?.message ?? String(commentErr),
+                }),
+              );
+            }
+          }
+
+          return {
+            ok: true,
+            publicationId: publication.id,
+            status: publication.status,
+            distributionType: publication.distributionType,
+            versionCode: publication.versionCode,
+            externalReleaseId: publication.externalReleaseId,
+            downloadUrl: publication.downloadUrl,
+            certificateFingerprint: publication.certificateFingerprint,
+            expiresAt: publication.expiresAt,
+            prCommentMessage,
+            dryRun: internalSharingResult.dryRun,
+          };
+        }
+
         const result = await this.googlePlayPublisher.publishBundle(
           {
             serviceAccountJsonPath,
             packageName,
             artifactPath: build.artifactPath!,
-            track: publication.track,
+            track: publication.track ?? 'internal',
             versionCode: publication.versionCode,
           },
           { dryRun: dto.dryRun },
@@ -329,14 +523,29 @@ export class PublicationsService {
         publication.versionCode =
           result.uploadedVersionCode ?? publication.versionCode;
         publication.status = PublicationStatus.SUCCESS;
+        publication.downloadUrl = null;
+        publication.certificateFingerprint = null;
+        publication.expiresAt = null;
         await this.publicationRepository.save(publication);
+
+        this.logger.log(
+          this.i18n.t('publication.execute_result', {
+            publicationId: publication.id,
+            distributionType: publication.distributionType,
+            artifactPath: build.artifactPath ?? 'n/a',
+            artifactHash: publication.artifactHash,
+            downloadUrl: publication.downloadUrl ?? 'n/a',
+          }),
+        );
 
         return {
           ok: true,
           publicationId: publication.id,
           status: publication.status,
+          distributionType: publication.distributionType,
           versionCode: publication.versionCode,
           externalReleaseId: publication.externalReleaseId,
+          downloadUrl: publication.downloadUrl,
           dryRun: result.dryRun,
         };
       }
@@ -349,7 +558,19 @@ export class PublicationsService {
     } catch (err: any) {
       publication.status = PublicationStatus.FAILED;
       await this.publicationRepository.save(publication);
-      throw err;
+
+      if (err instanceof HttpException) {
+        throw err;
+      }
+
+      const message = err?.message ?? String(err);
+      this.logger.error(
+        this.i18n.t('publication.execute_error', {
+          publicationId: publication.id,
+          message,
+        }),
+      );
+      throw new BadRequestException(message);
     }
   }
 

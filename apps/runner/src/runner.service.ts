@@ -25,6 +25,127 @@ export class RunnerService implements OnModuleInit {
   private syncRunning = false;
   private buildProcessing = false;
 
+  private shouldKeepWorktreeForDebug() {
+    return (
+      String(process.env.WORKTREE_KEEP_FOR_DEBUG ?? 'false').toLowerCase() ===
+      'true'
+    );
+  }
+
+  private isAutoPublicationOnPrEnabled() {
+    return (
+      String(process.env.PUBLICATION_AUTO_ON_PR ?? 'true').toLowerCase() !==
+      'false'
+    );
+  }
+
+  private isAutoPublicationDryRun() {
+    return (
+      String(process.env.PUBLICATION_AUTO_DRY_RUN ?? 'true').toLowerCase() !==
+      'false'
+    );
+  }
+
+  private getApiBaseUrl() {
+    const raw = String(
+      process.env.API_INTERNAL_URL ??
+        process.env.API_URL ??
+        `http://localhost:${process.env.API_PORT ?? 2999}`,
+    ).trim();
+
+    return raw.replace(/\/$/, '');
+  }
+
+  private async autoCreateAndExecutePublication(build: BuildEntity) {
+    if (!this.isAutoPublicationOnPrEnabled()) {
+      return;
+    }
+
+    if (build.trigger !== BuildTrigger.PR) {
+      return;
+    }
+
+    const apiBaseUrl = this.getApiBaseUrl();
+    const dryRun = this.isAutoPublicationDryRun();
+
+    this.logger.log(
+      this.i18n.t('runner.publication_auto_start', {
+        buildId: build.id,
+        dryRun,
+        apiBaseUrl,
+      }),
+    );
+
+    const createRes = await fetch(`${apiBaseUrl}/publications`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        buildId: build.id,
+        platform: 'android',
+        track: process.env.PUBLICATION_DEFAULT_TRACK ?? 'internal',
+        provider: 'google-play',
+      }),
+    });
+
+    const createText = await createRes.text();
+    let createData: any = null;
+    try {
+      createData = createText ? JSON.parse(createText) : null;
+    } catch {
+      createData = createText;
+    }
+
+    if (!createRes.ok) {
+      throw new Error(
+        this.i18n.t('runner.publication_auto_create_failed', {
+          buildId: build.id,
+          status: createRes.status,
+          response: String(createText ?? ''),
+        }),
+      );
+    }
+
+    const publicationId = Number(createData?.publicationId);
+    if (!Number.isFinite(publicationId)) {
+      this.logger.warn(
+        this.i18n.t('runner.publication_auto_skip_execute', {
+          buildId: build.id,
+          response: JSON.stringify(createData),
+        }),
+      );
+      return;
+    }
+
+    const executeRes = await fetch(
+      `${apiBaseUrl}/publications/${publicationId}/execute`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dryRun }),
+      },
+    );
+
+    const executeText = await executeRes.text();
+    if (!executeRes.ok) {
+      throw new Error(
+        this.i18n.t('runner.publication_auto_execute_failed', {
+          buildId: build.id,
+          publicationId,
+          status: executeRes.status,
+          response: String(executeText ?? ''),
+        }),
+      );
+    }
+
+    this.logger.log(
+      this.i18n.t('runner.publication_auto_done', {
+        buildId: build.id,
+        publicationId,
+        response: executeText,
+      }),
+    );
+  }
+
   constructor(
     @InjectRepository(BuildEntity)
     private readonly buildRepository: Repository<BuildEntity>,
@@ -260,6 +381,22 @@ export class RunnerService implements OnModuleInit {
         await this.angularBuilder.build(build, prepared.repoDir);
       } else if (repoType === RepoType.FLUTTER) {
         await this.flutterBuilder.build(build, prepared.repoDir);
+
+        const updatedBuild = await this.buildRepository.findOne({
+          where: { id: build.id },
+        });
+        if (updatedBuild?.status === BuildStatus.SUCCESS) {
+          try {
+            await this.autoCreateAndExecutePublication(updatedBuild);
+          } catch (publicationErr: any) {
+            await logger.error(
+              this.i18n.t('runner.publication_auto_failed', {
+                buildId: build.id,
+                error: publicationErr?.message ?? String(publicationErr),
+              }),
+            );
+          }
+        }
       } else if (repoType === RepoType.TYPESCRIPT) {
         await this.nodeBuilder.build(build, prepared.repoDir);
       } else {
@@ -281,6 +418,15 @@ export class RunnerService implements OnModuleInit {
       this.logger.error(this.i18n.t('runner.failed', { buildId: build.id, message }));
       } finally {
         if (prepared?.baseDir && prepared?.worktreeDir) {
+          if (this.shouldKeepWorktreeForDebug()) {
+            await logger.log(
+              this.i18n.t('runner.worktree_keep_debug_enabled', {
+                worktreeDir: prepared.worktreeDir,
+              }),
+            );
+            return;
+          }
+
           try {
             await this.buildPreparation.cleanupWorktree(
               prepared.baseDir,

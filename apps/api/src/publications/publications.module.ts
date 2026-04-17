@@ -8,6 +8,7 @@ import { VersionCodeStateEntity } from '../../../shared/src/db/entities/version-
 import { RepoEntity } from '../../../shared/src/db/entities/repo.entity';
 import { I18nModule } from '../../../shared/src/i18n/i18n.module';
 import { GooglePlayPublisherService } from './google-play-publisher.service';
+import { GitHubRepoService } from '../repos/github-repo.service';
 
 @Module({
   imports: [
@@ -20,6 +21,6 @@ import { GooglePlayPublisherService } from './google-play-publisher.service';
     ]),
   ],
   controllers: [PublicationsController],
-  providers: [PublicationsService, GooglePlayPublisherService],
+  providers: [PublicationsService, GooglePlayPublisherService, GitHubRepoService],
 })
 export class PublicationsModule {}

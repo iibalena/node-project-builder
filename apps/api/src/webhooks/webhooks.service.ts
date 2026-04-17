@@ -10,6 +10,7 @@ import {
   BuildTrigger,
 } from '../../../shared/src/db/entities/build.entity';
 import { BuildRefStateEntity } from '../../../shared/src/db/entities/build-ref-state.entity';
+import { RepoType } from '../../../shared/src/db/entities/repo-type.enum';
 import { I18nService } from '../../../shared/src/i18n/i18n.service';
 
 type GithubHeaders = {
@@ -34,6 +35,12 @@ export class WebhooksService {
   private getCooldownMs() {
     const value = Number(process.env.BUILD_COOLDOWN_MS ?? 60000);
     return Number.isFinite(value) ? value : 60000;
+  }
+
+  private isPrOnlyBuildsModeForRepo(repo: RepoEntity) {
+    const prOnlyEnabled =
+      String(process.env.PR_ONLY_BUILDS ?? 'false').toLowerCase() === 'true';
+    return prOnlyEnabled && repo.type === RepoType.FLUTTER;
   }
 
   private buildRefKey(ref: string, prNumber: number | null) {
@@ -241,6 +248,12 @@ export class WebhooksService {
     // Merge / push -> build
     if (event === 'push') {
       this.logger.log(this.i18n.t('webhook.push_event'));
+
+      if (this.isPrOnlyBuildsModeForRepo(repo)) {
+        this.logger.log(this.i18n.t('webhook.push_ignored_pr_only'));
+        return { ok: true, ignored: true };
+      }
+
       const refFull = args.payload?.ref; // ex: refs/heads/main
       const sha = args.payload?.after;
 

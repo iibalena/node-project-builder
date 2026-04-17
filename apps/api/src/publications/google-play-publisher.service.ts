@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { google } from 'googleapis';
 import * as fs from 'fs';
+import * as path from 'path';
 import { I18nService } from '../../../shared/src/i18n/i18n.service';
 
 export type GooglePlayPublishArgs = {
@@ -9,6 +10,12 @@ export type GooglePlayPublishArgs = {
   artifactPath: string;
   track: string;
   versionCode?: number | null;
+};
+
+export type GooglePlayInternalSharingArgs = {
+  serviceAccountJsonPath: string;
+  packageName: string;
+  artifactPath: string;
 };
 
 @Injectable()
@@ -20,20 +27,33 @@ export class GooglePlayPublisherService {
     return raw.trim().toLowerCase() !== 'false';
   }
 
-  async publishBundle(args: GooglePlayPublishArgs, options?: { dryRun?: boolean }) {
-    const dryRun = options?.dryRun ?? this.isDryRun(true);
-
+  private async assertArtifactExists(artifactPath: string) {
     const artifactExists = await fs.promises
-      .access(args.artifactPath)
+      .access(artifactPath)
       .then(() => true)
       .catch(() => false);
     if (!artifactExists) {
       throw new Error(
         this.i18n.t('publication.artifact_file_missing', {
-          path: args.artifactPath,
+          path: artifactPath,
         }),
       );
     }
+  }
+
+  private buildPublisher(serviceAccountJsonPath: string) {
+    const auth = new google.auth.GoogleAuth({
+      keyFile: serviceAccountJsonPath,
+      scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+    });
+
+    return google.androidpublisher({ version: 'v3', auth });
+  }
+
+  async publishBundle(args: GooglePlayPublishArgs, options?: { dryRun?: boolean }) {
+    const dryRun = options?.dryRun ?? this.isDryRun(true);
+
+    await this.assertArtifactExists(args.artifactPath);
 
     if (dryRun) {
       return {
@@ -43,12 +63,7 @@ export class GooglePlayPublisherService {
       };
     }
 
-    const auth = new google.auth.GoogleAuth({
-      keyFile: args.serviceAccountJsonPath,
-      scopes: ['https://www.googleapis.com/auth/androidpublisher'],
-    });
-
-    const publisher = google.androidpublisher({ version: 'v3', auth });
+    const publisher = this.buildPublisher(args.serviceAccountJsonPath);
 
     const editInsert = await publisher.edits.insert({ packageName: args.packageName });
     const editId = editInsert.data.id;
@@ -94,6 +109,59 @@ export class GooglePlayPublisherService {
       externalReleaseId: `google-play:${editId}:${args.track}`,
       uploadedVersionCode,
       dryRun: false,
+    };
+  }
+
+  async uploadInternalSharingArtifact(
+    args: GooglePlayInternalSharingArgs,
+    options?: { dryRun?: boolean },
+  ) {
+    const dryRun = options?.dryRun ?? this.isDryRun(true);
+    await this.assertArtifactExists(args.artifactPath);
+
+    const ext = path.extname(args.artifactPath).toLowerCase();
+    const isBundle = ext === '.aab';
+    const isApk = ext === '.apk';
+
+    if (!isBundle && !isApk) {
+      throw new Error(
+        this.i18n.t('publication.internal_sharing_invalid_artifact', {
+          path: args.artifactPath,
+        }),
+      );
+    }
+
+    if (dryRun) {
+      return {
+        dryRun: true,
+        downloadUrl: `dry-run-internal-sharing:${args.packageName}:${Date.now()}`,
+        certificateFingerprint: null,
+        externalReleaseId: `google-play:internal-sharing:dry-run:${Date.now()}`,
+      };
+    }
+
+    const publisher = this.buildPublisher(args.serviceAccountJsonPath);
+
+    const media = {
+      mimeType: 'application/octet-stream',
+      body: fs.createReadStream(args.artifactPath),
+    };
+
+    const response = isBundle
+      ? await publisher.internalappsharingartifacts.uploadbundle({
+          packageName: args.packageName,
+          media,
+        })
+      : await publisher.internalappsharingartifacts.uploadapk({
+          packageName: args.packageName,
+          media,
+        });
+
+    return {
+      dryRun: false,
+      downloadUrl: response.data.downloadUrl ?? null,
+      certificateFingerprint: response.data.certificateFingerprint ?? null,
+      externalReleaseId: response.data.sha256 ?? response.data.downloadUrl ?? null,
     };
   }
 }

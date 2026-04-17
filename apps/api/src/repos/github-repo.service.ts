@@ -148,4 +148,57 @@ export class GitHubRepoService {
     );
     return { default_branch: data?.default_branch ?? 'master' };
   }
+
+  async postPrComment(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    body: string,
+  ): Promise<void> {
+    const token = this.token;
+    if (!token) {
+      throw new Error(this.i18n.t('github.token_missing'));
+    }
+
+    const path = `/repos/${owner}/${repo}/issues/${prNumber}/comments`;
+    const payload = JSON.stringify({ body });
+    const options = {
+      hostname: 'api.github.com',
+      method: 'POST',
+      path,
+      headers: {
+        'User-Agent': 'node-project-builder',
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      const req = https.request(options, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (d) => chunks.push(Buffer.from(d)));
+        res.on('end', () => {
+          const responseBody = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve();
+            return;
+          }
+          reject(
+            new Error(
+              this.i18n.t('github.api_error', {
+                status: res.statusCode,
+                body: responseBody,
+              }),
+            ),
+          );
+        });
+      });
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    });
+  }
 }

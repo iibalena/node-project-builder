@@ -8,6 +8,7 @@ import {
   BuildTrigger,
 } from '../../shared/src/db/entities/build.entity';
 import { BuildRefStateEntity } from '../../shared/src/db/entities/build-ref-state.entity';
+import { RepoType } from '../../shared/src/db/entities/repo-type.enum';
 import { GitHubService } from './github.service';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -18,6 +19,12 @@ export class BuildSyncService {
   private readonly logger = new Logger(BuildSyncService.name);
 
   private readonly maxAttemptsPerSameSha = 2;
+
+  private isPrOnlyBuildsModeForRepo(repo: RepoEntity) {
+    const prOnlyEnabled =
+      String(process.env.PR_ONLY_BUILDS ?? 'false').toLowerCase() === 'true';
+    return prOnlyEnabled && repo.type === RepoType.FLUTTER;
+  }
 
   constructor(
     @InjectRepository(RepoEntity)
@@ -331,6 +338,18 @@ export class BuildSyncService {
       }
     }
 
+    if (this.isPrOnlyBuildsModeForRepo(repo)) {
+      this.logger.log(
+        this.i18n.t('build_sync.branch_skipped_pr_only', {
+          owner: repo.owner,
+          name: repo.name,
+          branch: repo.defaultBranch,
+          repoType: repo.type,
+        }),
+      );
+      return;
+    }
+
     try {
       this.logger.log(
         this.i18n.t('build_sync.fetch_branch', {
@@ -423,6 +442,13 @@ export class BuildSyncService {
       });
 
       return { ok: true, enqueued: created, ref: match.ref, sha: match.sha };
+    }
+
+    if (this.isPrOnlyBuildsModeForRepo(args.repo)) {
+      return {
+        ok: false,
+        message: this.i18n.t('build_sync.manual_branch_blocked_pr_only'),
+      };
     }
 
     const ref = args.ref?.trim() || args.repo.defaultBranch;
