@@ -470,6 +470,11 @@ export class PublicationsService {
               })
             : null;
 
+          let prCommentPosted = false;
+          let prCommentError: string | null = null;
+          let taskNotificationSent = false;
+          let taskNotificationError: string | null = null;
+
           if (prCommentMessage && build.prNumber != null && !internalSharingResult.dryRun) {
             try {
               await this.githubRepoService.postPrComment(
@@ -484,19 +489,21 @@ export class PublicationsService {
                   prNumber: build.prNumber,
                 }),
               );
+              prCommentPosted = true;
             } catch (commentErr: any) {
+              prCommentError = commentErr?.message ?? String(commentErr);
               this.logger.warn(
                 this.i18n.t('publication.pr_comment_failed', {
                   publicationId: publication.id,
                   prNumber: build.prNumber,
-                  error: commentErr?.message ?? String(commentErr),
+                  error: prCommentError,
                 }),
               );
             }
 
             try {
               if (publication.downloadUrl && publication.expiresAt) {
-                await this.taskNotification.notifyBuildAvailable({
+                const notificationResult = await this.taskNotification.notifyBuildAvailable({
                   owner: repo.owner,
                   name: repo.name,
                   branch: build.ref,
@@ -504,10 +511,13 @@ export class PublicationsService {
                   downloadUrl: publication.downloadUrl,
                   expiresAt: publication.expiresAt,
                 });
+                taskNotificationSent = notificationResult.sent;
+                taskNotificationError = notificationResult.error;
               }
             } catch (notifyErr: any) {
+              taskNotificationError = notifyErr?.message ?? String(notifyErr);
               this.logger.warn(
-                `Task notification error: ${notifyErr?.message ?? String(notifyErr)}`,
+                `Task notification error: ${taskNotificationError}`,
               );
             }
           }
@@ -523,6 +533,10 @@ export class PublicationsService {
             certificateFingerprint: publication.certificateFingerprint,
             expiresAt: publication.expiresAt,
             prCommentMessage,
+            prCommentPosted,
+            prCommentError,
+            taskNotificationSent,
+            taskNotificationError,
             dryRun: internalSharingResult.dryRun,
           };
         }

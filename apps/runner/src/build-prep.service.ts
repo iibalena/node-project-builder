@@ -53,6 +53,10 @@ export class BuildPreparationService {
     return (process.env.GITHUB_TOKEN ?? '').trim();
   }
 
+  private shouldKeepWorktreeForDebug() {
+    return String(process.env.WORKTREE_KEEP_FOR_DEBUG ?? 'false').toLowerCase() === 'true';
+  }
+
   private isHttpsGithubUrl(url: string) {
     return /^https:\/\/github\.com\//i.test(url.trim());
   }
@@ -180,7 +184,9 @@ export class BuildPreparationService {
     // ensure parent exists
     await fs.promises.mkdir(path.dirname(repoDir), { recursive: true });
 
-    await this.cleanupPendingWorktrees(repo, buildId);
+    if (!this.shouldKeepWorktreeForDebug()) {
+      await this.cleanupPendingWorktrees(repo, buildId);
+    }
 
     const exists = await fs.promises
       .access(repoDir)
@@ -227,8 +233,8 @@ export class BuildPreparationService {
       const { authArgs, redactedAuthArgs } = this.isHttpsGithubUrl(remoteUrl)
         ? this.getGitGithubAuthArgs()
         : { authArgs: '', redactedAuthArgs: '' };
-      const fetchArgs = `${authArgs} fetch --all --prune`.trim();
-      const redactedFetchArgs = `${redactedAuthArgs} fetch --all --prune`.trim();
+      const fetchArgs = `${authArgs} fetch origin --prune`.trim();
+      const redactedFetchArgs = `${redactedAuthArgs} fetch origin --prune`.trim();
       fetchRes = await this.runGit(repoDir, fetchArgs, redactedFetchArgs);
     }
 
