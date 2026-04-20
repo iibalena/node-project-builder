@@ -13,6 +13,7 @@ import { GitHubService } from './github.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import { I18nService } from '../../shared/src/i18n/i18n.service';
+import { AlertEmailService } from '../../shared/src/notifications/alert-email.service';
 
 @Injectable()
 export class BuildSyncService {
@@ -35,7 +36,54 @@ export class BuildSyncService {
     private readonly refStateRepository: Repository<BuildRefStateEntity>,
     private readonly github: GitHubService,
     private readonly i18n: I18nService,
+    private readonly alertEmail: AlertEmailService,
   ) {}
+
+  private normalizeRepoKey(owner: string, name: string) {
+    return `${owner}/${name}`.trim().toLowerCase();
+  }
+
+  private getIgnoredRepoKeys() {
+    const raw = String(process.env.REPO_IGNORE_LIST ?? '').trim();
+    if (!raw) {
+      return new Set<string>();
+    }
+
+    return new Set(
+      raw
+        .split(/[;,]/g)
+        .map((item) => item.trim().toLowerCase())
+        .filter((item) => item.includes('/')),
+    );
+  }
+
+  private isIgnoredRepo(repo: RepoEntity) {
+    const key = this.normalizeRepoKey(repo.owner, repo.name);
+    return this.getIgnoredRepoKeys().has(key);
+  }
+
+  private isRepoNotFoundError(message: string) {
+    return /github api\s*404|not found/i.test(message);
+  }
+
+  private async notifyRepoNotFoundByEmail(args: {
+    repo: RepoEntity;
+    stage: string;
+    error: string;
+  }) {
+    const repoFullName = `${args.repo.owner}/${args.repo.name}`;
+    await this.alertEmail.sendAlert({
+      key: `repo-not-found:${repoFullName}:${args.stage}`,
+      subject: `[node-project-builder] Repositorio inexistente ou inacessivel: ${repoFullName}`,
+      text: [
+        'Falha ao sincronizar repositorio no GitHub.',
+        '',
+        `Repositorio: ${repoFullName}`,
+        `Etapa: ${args.stage}`,
+        `Erro: ${args.error}`,
+      ].join('\n'),
+    });
+  }
 
   private getExecutablesDir() {
     return process.env.EXECUTABLES_DIR ?? '';
@@ -277,6 +325,13 @@ export class BuildSyncService {
   }
 
   async syncRepo(repo: RepoEntity, options?: { ignoreCooldown?: boolean }) {
+    if (this.isIgnoredRepo(repo)) {
+      this.logger.log(
+        `Repository ${repo.owner}/${repo.name} ignored by REPO_IGNORE_LIST`,
+      );
+      return;
+    }
+
     this.logger.log(
       this.i18n.t('build_sync.fetch_open_prs', {
         owner: repo.owner,
@@ -287,13 +342,21 @@ export class BuildSyncService {
     try {
       openPrs = await this.github.listOpenPulls(repo.owner, repo.name);
     } catch (err: any) {
+      const message = err?.message ?? String(err);
       this.logger.error(
         this.i18n.t('build_sync.fetch_open_prs_failed', {
           owner: repo.owner,
           name: repo.name,
-          error: err?.message ?? String(err),
+          error: message,
         }),
       );
+      if (this.isRepoNotFoundError(message)) {
+        await this.notifyRepoNotFoundByEmail({
+          repo,
+          stage: 'list-open-prs',
+          error: message,
+        });
+      }
       return;
     }
 
@@ -384,14 +447,22 @@ export class BuildSyncService {
         }
       }
     } catch (err: any) {
+      const message = err?.message ?? String(err);
       this.logger.error(
         this.i18n.t('build_sync.branch_read_failed', {
           branch: repo.defaultBranch,
           owner: repo.owner,
           name: repo.name,
-          error: err?.message ?? String(err),
+          error: message,
         }),
       );
+      if (this.isRepoNotFoundError(message)) {
+        await this.notifyRepoNotFoundByEmail({
+          repo,
+          stage: `read-branch:${repo.defaultBranch}`,
+          error: message,
+        });
+      }
     }
   }
 
@@ -401,6 +472,13 @@ export class BuildSyncService {
     ref?: string;
     force?: boolean;
   }) {
+    if (this.isIgnoredRepo(args.repo)) {
+      return {
+        ok: false,
+        message: `Repository ${args.repo.owner}/${args.repo.name} ignored by REPO_IGNORE_LIST`,
+      };
+    }
+
     this.logger.log(
       this.i18n.t('build_sync.manual', {
         owner: args.repo.owner,
@@ -504,8 +582,15 @@ export class BuildSyncService {
     const repos = await this.repoRepository.find({ where: { isActive: true } });
     if (repos.length === 0) return;
 
-    this.logger.log(this.i18n.t('build_sync.sync_start', { count: repos.length }));
-    for (const repo of repos) {
+    const activeRepos = repos.filter((repo) => !this.isIgnoredRepo(repo));
+    if (activeRepos.length !== repos.length) {
+      this.logger.log(
+        `Skipping ${repos.length - activeRepos.length} repositories by REPO_IGNORE_LIST`,
+      );
+    }
+
+    this.logger.log(this.i18n.t('build_sync.sync_start', { count: activeRepos.length }));
+    for (const repo of activeRepos) {
       this.logger.log(
         this.i18n.t('build_sync.repo_found', {
           owner: repo.owner,

@@ -9,6 +9,7 @@ import {
 import type { Request } from 'express';
 import { WebhooksService } from './webhooks.service';
 import { I18nService } from '../../../shared/src/i18n/i18n.service';
+import { AlertEmailService } from '../../../shared/src/notifications/alert-email.service';
 
 type RawBodyRequest = Request & { rawBody?: Buffer };
 
@@ -18,6 +19,7 @@ export class WebhooksController {
   constructor(
     private readonly webhooksService: WebhooksService,
     private readonly i18n: I18nService,
+    private readonly alertEmail: AlertEmailService,
   ) {}
 
   @Post('github/webhook')
@@ -49,6 +51,7 @@ export class WebhooksController {
     const delivery = String(req.headers['x-github-delivery'] ?? '');
     const event = String(req.headers['x-github-event'] ?? '');
     const signature = String(req.headers['x-hub-signature-256'] ?? '');
+    const dateHeader = String(req.headers['date'] ?? '');
     const source = this.webhooksService.isFromGitHubApp(payload)
       ? 'github-app'
       : 'repo-webhook';
@@ -65,6 +68,25 @@ export class WebhooksController {
       }),
     );
 
+    // Check webhook age first (before signature validation)
+    if (this.webhooksService.isWebhookTooOld(dateHeader)) {
+      if (
+        repository &&
+        !this.webhooksService.isRepoFullNameIgnored(repository)
+      ) {
+        await this.alertEmail.sendWebhookRejectionAlert({
+          repository,
+          webhook: 'unsupported-event',
+          details: `Webhook muito antigo (recebido: ${dateHeader || 'data desconhecida'}). Delivery: ${delivery}`,
+        });
+      }
+
+      this.logger.warn(
+        `Webhook rejeitado por ser muito antigo. Repository: ${repository}, Delivery: ${delivery}, Date: ${dateHeader}`,
+      );
+      throw new UnauthorizedException('[webhook] Webhook muito antigo, rejeitado.');
+    }
+
     const isSignatureValid = this.webhooksService.verifyGithubSignature(rawBody, {
       'x-hub-signature-256': signature,
       'x-github-event': event,
@@ -72,6 +94,17 @@ export class WebhooksController {
     });
 
     if (!isSignatureValid) {
+      if (
+        repository &&
+        !this.webhooksService.isRepoFullNameIgnored(repository)
+      ) {
+        await this.alertEmail.sendWebhookRejectionAlert({
+          repository,
+          webhook: 'invalid-signature',
+          details: `Delivery: ${delivery}, Event: ${event}, Source: ${source}, Ref: ${ref || 'n/a'}`,
+        });
+      }
+
       this.logger.warn(
         this.i18n.t('webhook.rejected_signature', {
           delivery,

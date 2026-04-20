@@ -5,12 +5,13 @@ import { BuildEntity } from '../../../shared/src/db/entities/build.entity';
 import { BuildRefStateEntity } from '../../../shared/src/db/entities/build-ref-state.entity';
 import { WebhooksController } from './webhooks.controller';
 import { WebhooksService } from './webhooks.service';
+import { AlertEmailService } from '../../../shared/src/notifications/alert-email.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([RepoEntity, BuildEntity, BuildRefStateEntity]),
   ],
   controllers: [WebhooksController],
-  providers: [WebhooksService],
+  providers: [WebhooksService, AlertEmailService],
 })
 export class WebhooksModule {}

@@ -94,6 +94,36 @@ export class WebhooksService {
     return this.isFromGitHubApp(payload);
   }
 
+  private normalizeRepoKey(owner: string, name: string) {
+    return `${owner}/${name}`.trim().toLowerCase();
+  }
+
+  private getIgnoredRepoKeys() {
+    const raw = String(process.env.REPO_IGNORE_LIST ?? '').trim();
+    if (!raw) {
+      return new Set<string>();
+    }
+
+    return new Set(
+      raw
+        .split(/[;,]/g)
+        .map((item) => item.trim().toLowerCase())
+        .filter((item) => item.includes('/')),
+    );
+  }
+
+  isRepoFullNameIgnored(repoFullName: string): boolean {
+    const value = String(repoFullName ?? '').trim().toLowerCase();
+    if (!value || !value.includes('/')) {
+      return false;
+    }
+    return this.getIgnoredRepoKeys().has(value);
+  }
+
+  isRepoIgnored(owner: string, name: string): boolean {
+    return this.getIgnoredRepoKeys().has(this.normalizeRepoKey(owner, name));
+  }
+
   private resolveRepository(payload: any): { owner: string | null; name: string | null } {
     const fullName = String(payload?.repository?.full_name ?? '').trim();
     if (fullName.includes('/')) {
@@ -137,6 +167,27 @@ export class WebhooksService {
     return crypto.timingSafeEqual(a, b);
   }
 
+  isWebhookTooOld(dateHeader?: string): boolean {
+    if (!dateHeader) return false;
+
+    const maxAgeMs = Number(process.env.MAX_WEBHOOK_AGE_MS ?? 300000);
+    if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) {
+      return false; // validation disabled if not configured properly
+    }
+
+    try {
+      const webhookTime = new Date(dateHeader).getTime();
+      if (!Number.isFinite(webhookTime)) {
+        return true; // reject if date parsing fails
+      }
+
+      const ageMs = Date.now() - webhookTime;
+      return ageMs > maxAgeMs;
+    } catch {
+      return true; // reject on any error
+    }
+  }
+
   async handleGithubEvent(args: {
     rawBody: Buffer;
     headers: GithubHeaders;
@@ -150,6 +201,13 @@ export class WebhooksService {
 
     if (!repoOwner || !repoName) {
       this.logger.warn(this.i18n.t('webhook.payload_repo_missing'));
+      return { ok: true, ignored: true };
+    }
+
+    if (this.isRepoIgnored(repoOwner, repoName)) {
+      this.logger.log(
+        `Webhook ignored by REPO_IGNORE_LIST for ${repoOwner}/${repoName}`,
+      );
       return { ok: true, ignored: true };
     }
 
