@@ -64,13 +64,20 @@ export class AngularBuilderService {
     return path.join(repoDir, 'dist');
   }
 
-  async build(build: BuildEntity, repoDir: string) {
+  async build(
+    build: BuildEntity,
+    repoDir: string,
+    repoOwner?: string,
+    repoName?: string,
+  ) {
     const logger = new BuildLogger(
       build.id,
       this.buildRepository,
       build.prNumber,
       build.ref,
       this.logger,
+      repoOwner,
+      repoName,
     );
 
     try {

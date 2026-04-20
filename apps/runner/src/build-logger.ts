@@ -4,6 +4,7 @@ import { BuildEntity } from '../../shared/src/db/entities/build.entity';
 
 export class BuildLogger {
   private refLabel: string;
+  private repoLabel: string;
 
   constructor(
     private buildId: number,
@@ -11,8 +12,11 @@ export class BuildLogger {
     prNumber: number | null,
     ref: string,
     private consoleLogger?: Logger,
+    repoOwner?: string,
+    repoName?: string,
   ) {
     this.refLabel = prNumber != null ? `PR#${prNumber}` : ref;
+    this.repoLabel = repoOwner && repoName ? `${repoOwner}/${repoName}` : '';
   }
 
   private async write(
@@ -40,15 +44,29 @@ export class BuildLogger {
 
   async log(message: string) {
     const now = new Date().toISOString();
-    const dbEntry = `[${now}] [build:${this.buildId}] [${this.refLabel}] ${message}`;
-    const consoleEntry = `build:${this.buildId} ${message}`;
+    const labels = [
+      `build:${this.buildId}`,
+      this.repoLabel,
+      this.refLabel,
+    ]
+      .filter((l) => l)
+      .join(' [') + ']';
+    const dbEntry = `[${now}] [${labels}] ${message}`;
+    const consoleEntry = `${labels} ${message}`;
     await this.write(dbEntry, consoleEntry, 'log');
   }
 
   async error(message: string) {
     const now = new Date().toISOString();
-    const dbEntry = `[${now}] [build:${this.buildId}] [${this.refLabel}] ERROR: ${message}`;
-    const consoleEntry = `build:${this.buildId} ERROR: ${message}`;
+    const labels = [
+      `build:${this.buildId}`,
+      this.repoLabel,
+      this.refLabel,
+    ]
+      .filter((l) => l)
+      .join(' [') + ']';
+    const dbEntry = `[${now}] [${labels}] ERROR: ${message}`;
+    const consoleEntry = `${labels} ERROR: ${message}`;
     await this.write(dbEntry, consoleEntry, 'error');
   }
 
