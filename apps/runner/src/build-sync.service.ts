@@ -19,7 +19,12 @@ import { AlertEmailService } from '../../shared/src/notifications/alert-email.se
 export class BuildSyncService {
   private readonly logger = new Logger(BuildSyncService.name);
 
-  private readonly maxAttemptsPerSameSha = 2;
+  private shouldAlwaysRetryFailedBuilds() {
+    return (
+      String(process.env.RETRY_FAILED_BUILDS_ALWAYS ?? 'true').toLowerCase() !==
+      'false'
+    );
+  }
 
   private isPrOnlyBuildsModeForRepo(repo: RepoEntity) {
     const prOnlyEnabled =
@@ -206,7 +211,7 @@ export class BuildSyncService {
         },
       });
 
-      if (attemptsForSameSha >= this.maxAttemptsPerSameSha) {
+      if (!this.shouldAlwaysRetryFailedBuilds()) {
         this.logger.log(
           this.i18n.t('build_sync.skip_same_sha_after_retry', {
             owner: args.repo.owner,
@@ -226,7 +231,7 @@ export class BuildSyncService {
           ref: args.ref,
           pr: args.prNumber ?? 'branch',
           attempts: attemptsForSameSha,
-          maxAttempts: this.maxAttemptsPerSameSha,
+          maxAttempts: 'unlimited',
         }),
       );
     }
