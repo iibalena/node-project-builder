@@ -15,6 +15,7 @@ import { FlutterBuilderService } from './flutter-builder.service';
 import { BuildSyncService } from './build-sync.service';
 import { I18nService } from '../../shared/src/i18n/i18n.service';
 import { RepoType } from '../../shared/src/db/entities/repo-type.enum';
+import { AlertEmailService } from '../../shared/src/notifications/alert-email.service';
 
 @Injectable()
 export class RunnerService implements OnModuleInit {
@@ -155,6 +156,7 @@ export class RunnerService implements OnModuleInit {
     private readonly flutterBuilder: FlutterBuilderService,
     private readonly buildSync: BuildSyncService,
     private readonly i18n: I18nService,
+    private readonly alertEmail: AlertEmailService,
   ) {}
 
   onModuleInit() {
@@ -304,6 +306,8 @@ export class RunnerService implements OnModuleInit {
         build.prNumber,
         build.ref,
         this.logger,
+        repo.owner,
+        repo.name,
       );
       const ref =
         build.trigger === BuildTrigger.MANUAL
@@ -378,9 +382,9 @@ export class RunnerService implements OnModuleInit {
       await logger.log(this.i18n.t('runner.pipeline_start'));
       const repoType = repo.type ?? RepoType.TYPESCRIPT;
       if (repoType === RepoType.ANGULAR) {
-        await this.angularBuilder.build(build, prepared.repoDir);
+        await this.angularBuilder.build(build, prepared.repoDir, repo.owner, repo.name);
       } else if (repoType === RepoType.FLUTTER) {
-        await this.flutterBuilder.build(build, prepared.repoDir);
+        await this.flutterBuilder.build(build, prepared.repoDir, repo.owner, repo.name);
 
         const updatedBuild = await this.buildRepository.findOne({
           where: { id: build.id },
@@ -398,7 +402,7 @@ export class RunnerService implements OnModuleInit {
           }
         }
       } else if (repoType === RepoType.TYPESCRIPT) {
-        await this.nodeBuilder.build(build, prepared.repoDir);
+        await this.nodeBuilder.build(build, prepared.repoDir, repo.owner, repo.name);
       } else {
         await logger.error(
           this.i18n.t('runner.unsupported_repo_type', {
@@ -444,6 +448,40 @@ export class RunnerService implements OnModuleInit {
               }),
             );
           }
+        }
+      }
+      // Send build result email
+      const finalBuild = await this.buildRepository.findOne({
+        where: { id: build.id },
+        relations: ['repo'],
+      });
+      if (finalBuild?.repo) {
+        const buildStartedAt = finalBuild.createdAt instanceof Date ? finalBuild.createdAt.getTime() : new Date(finalBuild.createdAt).getTime();
+        const duration = Date.now() - buildStartedAt;
+        if (finalBuild.status === BuildStatus.SUCCESS) {
+          await this.alertEmail.sendBuildAlert({
+            buildId: finalBuild.id,
+            repoOwner: finalBuild.repo.owner,
+            repoName: finalBuild.repo.name,
+            branch: finalBuild.ref,
+            status: 'SUCCESS',
+            duration,
+          });
+        } else if (finalBuild.status === BuildStatus.FAILED) {
+          const errorLog = finalBuild.log
+            ?.split('\n')
+            .filter((line) => line.includes('ERROR') || line.includes('erro') || line.includes('failed') || line.includes('Falha'))
+            .join('\n')
+            .slice(0, 1000) || 'Sem detalhes de erro disponível';
+          await this.alertEmail.sendBuildAlert({
+            buildId: finalBuild.id,
+            repoOwner: finalBuild.repo.owner,
+            repoName: finalBuild.repo.name,
+            branch: finalBuild.ref,
+            status: 'FAILED',
+            log: errorLog,
+            duration,
+          });
         }
       }
     } finally {

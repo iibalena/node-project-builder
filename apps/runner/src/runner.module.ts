@@ -15,6 +15,7 @@ import { RepoEntity } from '../../shared/src/db/entities/repo.entity';
 import { BuildRefStateEntity } from '../../shared/src/db/entities/build-ref-state.entity';
 import { SyncController } from './sync.controller';
 import { I18nModule } from '../../shared/src/i18n/i18n.module';
+import { AlertEmailService } from '../../shared/src/notifications/alert-email.service';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { I18nModule } from '../../shared/src/i18n/i18n.module';
     FlutterBuilderService,
     GitHubService,
     BuildSyncService,
+    AlertEmailService,
   ],
 })
 export class RunnerModule {}
