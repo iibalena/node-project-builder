@@ -87,7 +87,21 @@ export class AlertEmailService {
       '  $params.Credential = New-Object System.Management.Automation.PSCredential($smtpUser, $securePass)',
       '}',
       'Send-MailMessage @params',
-    ].join('; ');
+    ].join('\n');
+  }
+
+  private summarizeSendError(error: any) {
+    const stderr = String(error?.stderr ?? '').trim();
+    if (stderr) {
+      const firstLine = stderr.split(/\r?\n/)[0]?.trim();
+      if (firstLine) {
+        return firstLine;
+      }
+    }
+
+    const message = String(error?.message ?? 'Unknown error').trim();
+    const firstLine = message.split(/\r?\n/)[0]?.trim();
+    return firstLine || 'Unknown error';
   }
 
   private getRecipients() {
@@ -277,7 +291,7 @@ export class AlertEmailService {
       this.logger.log(`Alert e-mail sent to ${to} subject=${subject}`);
       return { sent: true };
     } catch (error: any) {
-      const message = error?.message ?? String(error);
+      const message = this.summarizeSendError(error);
       this.logger.warn(`Failed to send alert e-mail: ${message}`);
       return { sent: false, reason: message };
     }

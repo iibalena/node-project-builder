@@ -69,7 +69,7 @@ export class WebhooksController {
     );
 
     // Check webhook age first (before signature validation)
-    if (this.webhooksService.isWebhookTooOld(dateHeader)) {
+    if (this.webhooksService.isWebhookTooOld(payload, dateHeader)) {
       if (
         repository &&
         !this.webhooksService.isRepoFullNameIgnored(repository)

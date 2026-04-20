@@ -167,25 +167,44 @@ export class WebhooksService {
     return crypto.timingSafeEqual(a, b);
   }
 
-  isWebhookTooOld(dateHeader?: string): boolean {
-    if (!dateHeader) return false;
+  private resolveWebhookTimestamp(payload: any, dateHeader?: string) {
+    const candidates = [
+      payload?.head_commit?.timestamp,
+      payload?.pull_request?.updated_at,
+      payload?.pull_request?.created_at,
+      payload?.repository?.pushed_at
+        ? new Date(Number(payload?.repository?.pushed_at) * 1000).toISOString()
+        : null,
+      dateHeader,
+    ];
+
+    for (const raw of candidates) {
+      const value = String(raw ?? '').trim();
+      if (!value) continue;
+      const parsed = new Date(value).getTime();
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  isWebhookTooOld(payload: any, dateHeader?: string): boolean {
+    if (!payload && !dateHeader) return false;
 
     const maxAgeMs = Number(process.env.MAX_WEBHOOK_AGE_MS ?? 300000);
     if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) {
       return false; // validation disabled if not configured properly
     }
 
-    try {
-      const webhookTime = new Date(dateHeader).getTime();
-      if (!Number.isFinite(webhookTime)) {
-        return true; // reject if date parsing fails
-      }
-
-      const ageMs = Date.now() - webhookTime;
-      return ageMs > maxAgeMs;
-    } catch {
-      return true; // reject on any error
+    const webhookTime = this.resolveWebhookTimestamp(payload, dateHeader);
+    if (!webhookTime) {
+      return true;
     }
+
+    const ageMs = Date.now() - webhookTime;
+    return ageMs > maxAgeMs;
   }
 
   async handleGithubEvent(args: {
