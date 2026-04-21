@@ -12,7 +12,8 @@ export class SyncService {
   }
 
   async syncNow(body: {
-    repoId: number;
+    repoId?: number;
+    repo?: string;
     prNumber?: number;
     ref?: string;
     force?: boolean;

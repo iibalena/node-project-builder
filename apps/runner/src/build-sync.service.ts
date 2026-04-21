@@ -27,6 +27,15 @@ export class BuildSyncService {
   }
 
   private isPrOnlyBuildsModeForRepo(repo: RepoEntity) {
+    if (repo.type === RepoType.FLUTTER) {
+      const allowFlutterDefaultBranch =
+        String(process.env.FLUTTER_BUILD_DEFAULT_BRANCH ?? 'false').toLowerCase() ===
+        'true';
+      if (!allowFlutterDefaultBranch) {
+        return true;
+      }
+    }
+
     const prOnlyEnabled =
       String(process.env.PR_ONLY_BUILDS ?? 'false').toLowerCase() === 'true';
     return prOnlyEnabled && repo.type === RepoType.FLUTTER;
@@ -99,14 +108,75 @@ export class BuildSyncService {
     return Number.isFinite(value) ? value : 60000;
   }
 
-  private async hasActiveBuild(repoId: number, sha: string) {
-    return this.buildRepository.findOne({
+  private getRunningBuildStaleMs() {
+    const value = Number(process.env.RUNNING_BUILD_STALE_MS ?? 3600000);
+    return Number.isFinite(value) && value >= 0 ? value : 3600000;
+  }
+
+  private isRunningBuildStale(build: BuildEntity) {
+    if (build.status !== BuildStatus.RUNNING) {
+      return false;
+    }
+
+    const referenceTime =
+      build.updatedAt instanceof Date
+        ? build.updatedAt.getTime()
+        : new Date(build.updatedAt).getTime();
+
+    if (!Number.isFinite(referenceTime)) {
+      return true;
+    }
+
+    return Date.now() - referenceTime > this.getRunningBuildStaleMs();
+  }
+
+  private async resolveActiveBlockingBuild(repoId: number, sha: string) {
+    const activeBuild = await this.buildRepository.findOne({
       where: {
         repoId,
         commitSha: sha,
         status: In([BuildStatus.QUEUED, BuildStatus.RUNNING]),
       },
+      order: { createdAt: 'DESC' },
     });
+
+    if (!activeBuild) {
+      return null;
+    }
+
+    if (!this.isRunningBuildStale(activeBuild)) {
+      return activeBuild;
+    }
+
+    const staleNote =
+      '[sync] Build RUNNING marcado como FAILED por timeout de stale build';
+    const nextLog = activeBuild.log ? `${activeBuild.log}\n${staleNote}` : staleNote;
+    await this.buildRepository.update(activeBuild.id, {
+      status: BuildStatus.FAILED,
+      log: nextLog,
+    });
+
+    this.logger.warn(
+      `Marked stale RUNNING build as FAILED buildId=${activeBuild.id} repoId=${repoId} sha=${sha}`,
+    );
+
+    await this.alertEmail.sendAlert({
+      key: `stale-running-build:${activeBuild.id}`,
+      subject: `[node-project-builder] Build RUNNING travado: #${activeBuild.id}`,
+      text: [
+        'Um build RUNNING foi marcado como FAILED para permitir novo processamento.',
+        '',
+        `Build ID: ${activeBuild.id}`,
+        `Repo ID: ${repoId}`,
+        `SHA: ${sha}`,
+      ].join('\n'),
+    });
+
+    return null;
+  }
+
+  private async hasActiveBuild(repoId: number, sha: string) {
+    return this.resolveActiveBlockingBuild(repoId, sha);
   }
 
   private buildRefKey(ref: string, prNumber: number | null) {

@@ -22,6 +22,13 @@ export class WebhooksController {
     private readonly alertEmail: AlertEmailService,
   ) {}
 
+  private shouldAlertUntrackedWebhook() {
+    return (
+      String(process.env.WEBHOOK_ALERT_UNTRACKED_REPO ?? 'false').toLowerCase() ===
+      'true'
+    );
+  }
+
   @Post('github/webhook')
   async githubWebhook(@Req() req: RawBodyRequest) {
     return this.handleGithubWebhook(req);
@@ -67,6 +74,40 @@ export class WebhooksController {
         ref: ref || 'n/a',
       }),
     );
+
+    if (repository && this.webhooksService.isRepoFullNameIgnored(repository)) {
+      this.logger.log(
+        `Webhook ignored by REPO_IGNORE_LIST for ${repository} delivery=${delivery}`,
+      );
+      return { ok: true, ignored: true };
+    }
+
+    const isTrackedRepository = repository
+      ? await this.webhooksService.isTrackedActiveRepoByFullName(repository)
+      : false;
+
+    if (!isTrackedRepository) {
+      if (repository && this.shouldAlertUntrackedWebhook()) {
+        await this.alertEmail.sendAlert({
+          key: `webhook-untracked:${repository}:${event || 'n-a'}`,
+          subject: `[node-project-builder] Webhook de repo nao cadastrado: ${repository}`,
+          text: [
+            'Webhook recebido para repositorio nao cadastrado no builder.',
+            '',
+            `Repositorio: ${repository}`,
+            `Evento: ${event || 'n/a'}`,
+            `Delivery: ${delivery || 'n/a'}`,
+            `Source: ${source}`,
+            `Ref: ${ref || 'n/a'}`,
+          ].join('\n'),
+        });
+      }
+
+      this.logger.log(
+        `Webhook ignored for untracked repository ${repository || 'n/a'} delivery=${delivery}`,
+      );
+      return { ok: true, ignored: true };
+    }
 
     // Check webhook age first (before signature validation)
     if (this.webhooksService.isWebhookTooOld(payload, dateHeader)) {

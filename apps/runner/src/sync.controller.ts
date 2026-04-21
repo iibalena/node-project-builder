@@ -6,7 +6,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 import { RepoEntity } from '../../shared/src/db/entities/repo.entity';
 import { BuildSyncService } from './build-sync.service';
 import { RunnerService } from './runner.service';
@@ -27,7 +27,8 @@ export class SyncController {
     @Body()
     body: {
       buildId?: number;
-      repoId: number;
+      repoId?: number;
+      repo?: string;
       prNumber?: number;
       ref?: string;
       force?: boolean;
@@ -39,13 +40,37 @@ export class SyncController {
     }
 
     const repoId = Number(body.repoId);
-    if (!Number.isFinite(repoId)) {
+    const repoRaw = String(body.repo ?? '').trim();
+
+    let repo: RepoEntity | null = null;
+    if (Number.isFinite(repoId)) {
+      repo = await this.repoRepository.findOne({
+        where: { id: repoId, isActive: true },
+      });
+    } else if (repoRaw) {
+      if (repoRaw.includes('/')) {
+        const [owner, name] = repoRaw.split('/', 2);
+        repo = await this.repoRepository.findOne({
+          where: { owner, name, isActive: true },
+        });
+      } else {
+        const matches = await this.repoRepository.find({
+          where: { name: ILike(repoRaw), isActive: true },
+          order: { id: 'DESC' },
+          take: 2,
+        });
+
+        if (matches.length > 1) {
+          throw new BadRequestException(
+            `Multiple active repositories matched name '${repoRaw}'. Use owner/name or repoId.`,
+          );
+        }
+
+        repo = matches[0] ?? null;
+      }
+    } else {
       throw new BadRequestException(this.i18n.t('sync.invalid_repo_or_build'));
     }
-
-    const repo = await this.repoRepository.findOne({
-      where: { id: repoId, isActive: true },
-    });
 
     if (!repo) {
       throw new NotFoundException(this.i18n.t('sync.repo_not_found'));

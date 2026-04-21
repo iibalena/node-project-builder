@@ -177,6 +177,7 @@ export class AlertEmailService {
     status: 'SUCCESS' | 'FAILED';
     log?: string;
     duration?: number;
+    artifactPath?: string;
   }): Promise<{ sent: boolean; reason?: string }> {
     const subject =
       args.status === 'SUCCESS'
@@ -198,6 +199,7 @@ export class AlertEmailService {
             `  Repositório: ${args.repoOwner}/${args.repoName}`,
             `  Branch: ${args.branch}`,
             `  Status: ✅ Sucesso`,
+            `  Executável: ${args.artifactPath || '(não informado)'}`,
             '',
           ].join('\n')
         : [

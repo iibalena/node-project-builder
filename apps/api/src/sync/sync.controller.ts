@@ -11,6 +11,7 @@ export class SyncController {
     const prNumber = body.prNumber ?? body.pr;
     return this.syncService.syncNow({
       repoId: body.repoId,
+      repo: body.repo,
       prNumber,
       ref: body.ref,
       force: body.force === true,

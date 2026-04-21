@@ -2,10 +2,15 @@ import { Type } from 'class-transformer';
 import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class SyncNowDto {
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  repoId: number;
+  repoId?: number;
+
+  @IsOptional()
+  @IsString()
+  repo?: string;
 
   @IsOptional()
   @Type(() => Number)

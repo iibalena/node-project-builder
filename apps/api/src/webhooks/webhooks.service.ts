@@ -124,6 +124,25 @@ export class WebhooksService {
     return this.getIgnoredRepoKeys().has(this.normalizeRepoKey(owner, name));
   }
 
+  async isTrackedActiveRepoByFullName(repoFullName: string) {
+    const value = String(repoFullName ?? '').trim();
+    if (!value.includes('/')) {
+      return false;
+    }
+
+    const [owner, name] = value.split('/', 2);
+    if (!owner || !name) {
+      return false;
+    }
+
+    const repo = await this.repoRepository.findOne({
+      where: { owner, name, isActive: true },
+      select: { id: true },
+    });
+
+    return Boolean(repo?.id);
+  }
+
   private resolveRepository(payload: any): { owner: string | null; name: string | null } {
     const fullName = String(payload?.repository?.full_name ?? '').trim();
     if (fullName.includes('/')) {

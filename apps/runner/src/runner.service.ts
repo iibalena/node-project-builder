@@ -16,6 +16,7 @@ import { BuildSyncService } from './build-sync.service';
 import { I18nService } from '../../shared/src/i18n/i18n.service';
 import { RepoType } from '../../shared/src/db/entities/repo-type.enum';
 import { AlertEmailService } from '../../shared/src/notifications/alert-email.service';
+import { GitHubService } from './github.service';
 
 @Injectable()
 export class RunnerService implements OnModuleInit {
@@ -55,6 +56,119 @@ export class RunnerService implements OnModuleInit {
     ).trim();
 
     return raw.replace(/\/$/, '');
+  }
+
+  private getTaskWebhookUrl() {
+    return String(process.env.TASK_NOTIFICATION_WEBHOOK_URL ?? '').trim();
+  }
+
+  private getTaskWebhookKey() {
+    return String(process.env.TASK_NOTIFICATION_WEBHOOK_KEY ?? '').trim();
+  }
+
+  private tryDecodeTaskWebhookKey(rawKey: string) {
+    if (!rawKey.includes('%')) {
+      return rawKey;
+    }
+
+    try {
+      return decodeURIComponent(rawKey);
+    } catch {
+      return rawKey;
+    }
+  }
+
+  private getTaskAuthHeaders(key: string): Record<string, string> {
+    if (!key) {
+      return {};
+    }
+
+    return {
+      'X-Task-Notification-Key': key,
+      'x-api-key': key,
+      Authorization: `Bearer ${key}`,
+    };
+  }
+
+  private async notifyExecutableTaskStatus(build: BuildEntity) {
+    if (!build.repo || build.prNumber == null) {
+      return;
+    }
+
+    if (
+      build.repo.type !== RepoType.TYPESCRIPT &&
+      build.repo.type !== RepoType.ANGULAR
+    ) {
+      return;
+    }
+
+    const webhookUrl = this.getTaskWebhookUrl();
+    if (!webhookUrl) {
+      return;
+    }
+
+    const payload = {
+      owner: build.repo.owner,
+      name: build.repo.name,
+      branch: build.ref,
+      prNumber: build.prNumber,
+      buildId: build.id,
+      status: build.status,
+      executablePath: build.artifactPath ?? null,
+      error:
+        build.status === BuildStatus.FAILED
+          ? String(build.log ?? '')
+              .split('\n')
+              .filter((line) => /ERROR|erro|failed|falha/i.test(line))
+              .slice(-8)
+              .join('\n')
+              .slice(0, 1200)
+          : null,
+    };
+
+    const send = async (keyForHeaders: string) => {
+      const res = await fetch(webhookUrl, {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          ...this.getTaskAuthHeaders(keyForHeaders),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(`Task webhook returned ${res.status}: ${text.slice(0, 300)}`);
+      }
+    };
+
+    try {
+      const rawKey = this.getTaskWebhookKey();
+      const decodedKey = this.tryDecodeTaskWebhookKey(rawKey);
+      const allowRetry = decodedKey && decodedKey !== rawKey;
+
+      try {
+        await send(rawKey);
+      } catch (firstErr: any) {
+        const firstMsg = firstErr?.message ?? String(firstErr);
+        if (!allowRetry || !/returned 401/i.test(firstMsg)) {
+          throw firstErr;
+        }
+
+        this.logger.warn(
+          `Executable task notification got 401, retrying with decoded key buildId=${build.id}`,
+        );
+        await send(decodedKey);
+      }
+
+      this.logger.log(
+        `Executable task notification sent buildId=${build.id} repo=${build.repo.owner}/${build.repo.name} pr=${build.prNumber}`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Executable task notification failed buildId=${build.id} repo=${build.repo.owner}/${build.repo.name}: ${err?.message ?? String(err)}`,
+      );
+    }
   }
 
   private async autoCreateAndExecutePublication(build: BuildEntity) {
@@ -155,9 +269,60 @@ export class RunnerService implements OnModuleInit {
     private readonly angularBuilder: AngularBuilderService,
     private readonly flutterBuilder: FlutterBuilderService,
     private readonly buildSync: BuildSyncService,
+    private readonly github: GitHubService,
     private readonly i18n: I18nService,
     private readonly alertEmail: AlertEmailService,
   ) {}
+
+  private async notifyExecutablePrComment(build: BuildEntity) {
+    if (!build.repo || build.prNumber == null) {
+      return;
+    }
+
+    if (
+      build.repo.type !== RepoType.TYPESCRIPT &&
+      build.repo.type !== RepoType.ANGULAR
+    ) {
+      return;
+    }
+
+    const body =
+      build.status === BuildStatus.SUCCESS
+        ? [
+            `✅ Build #${build.id} concluido com sucesso.`,
+            `- Repo: ${build.repo.owner}/${build.repo.name}`,
+            `- Branch: ${build.ref}`,
+            `- Executavel: ${build.artifactPath ?? '(nao encontrado)'}`,
+          ].join('\n')
+        : [
+            `❌ Build #${build.id} falhou.`,
+            `- Repo: ${build.repo.owner}/${build.repo.name}`,
+            `- Branch: ${build.ref}`,
+            '- Erro (resumo):',
+            String(build.log ?? '')
+              .split('\n')
+              .filter((line) => /ERROR|erro|failed|falha/i.test(line))
+              .slice(-6)
+              .join('\n')
+              .slice(0, 1000) || '(sem detalhes)',
+          ].join('\n');
+
+    try {
+      await this.github.postPullRequestComment({
+        owner: build.repo.owner,
+        repo: build.repo.name,
+        prNumber: build.prNumber,
+        body,
+      });
+      this.logger.log(
+        `Executable PR comment posted buildId=${build.id} repo=${build.repo.owner}/${build.repo.name} pr=${build.prNumber}`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Executable PR comment failed buildId=${build.id} repo=${build.repo.owner}/${build.repo.name} pr=${build.prNumber}: ${err?.message ?? String(err)}`,
+      );
+    }
+  }
 
   onModuleInit() {
     const intervalMs = Number(process.env.POLL_INTERVAL_MS ?? 3000);
@@ -466,6 +631,7 @@ export class RunnerService implements OnModuleInit {
             branch: finalBuild.ref,
             status: 'SUCCESS',
             duration,
+            artifactPath: finalBuild.artifactPath ?? undefined,
           });
         } else if (finalBuild.status === BuildStatus.FAILED) {
           const errorLog = finalBuild.log
@@ -483,6 +649,9 @@ export class RunnerService implements OnModuleInit {
             duration,
           });
         }
+
+        await this.notifyExecutableTaskStatus(finalBuild);
+        await this.notifyExecutablePrComment(finalBuild);
       }
     } finally {
       this.buildProcessing = false;
