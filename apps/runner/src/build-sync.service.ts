@@ -130,11 +130,18 @@ export class BuildSyncService {
     return Date.now() - referenceTime > this.getRunningBuildStaleMs();
   }
 
-  private async resolveActiveBlockingBuild(repoId: number, sha: string) {
+  private async resolveActiveBlockingBuild(args: {
+    repoId: number;
+    sha: string;
+    repoOwner?: string;
+    repoName?: string;
+    ref?: string;
+    prNumber?: number | null;
+  }) {
     const activeBuild = await this.buildRepository.findOne({
       where: {
-        repoId,
-        commitSha: sha,
+        repoId: args.repoId,
+        commitSha: args.sha,
         status: In([BuildStatus.QUEUED, BuildStatus.RUNNING]),
       },
       order: { createdAt: 'DESC' },
@@ -156,8 +163,25 @@ export class BuildSyncService {
       log: nextLog,
     });
 
+    const repoLabel =
+      args.repoOwner && args.repoName
+        ? `${args.repoOwner}/${args.repoName}`
+        : `repoId:${args.repoId}`;
+    const targetLabel =
+      args.prNumber != null
+        ? `PR #${args.prNumber}`
+        : `branch ${args.ref ?? activeBuild.ref ?? 'n/a'}`;
+    const referenceTime =
+      activeBuild.updatedAt instanceof Date
+        ? activeBuild.updatedAt.getTime()
+        : new Date(activeBuild.updatedAt).getTime();
+    const staleAgeMinutes = Number.isFinite(referenceTime)
+      ? Math.max(0, Math.round((Date.now() - referenceTime) / 60000))
+      : null;
+    const staleThresholdMinutes = Math.round(this.getRunningBuildStaleMs() / 60000);
+
     this.logger.warn(
-      `Marked stale RUNNING build as FAILED buildId=${activeBuild.id} repoId=${repoId} sha=${sha}`,
+      `Marked stale RUNNING build as FAILED buildId=${activeBuild.id} repo=${repoLabel} ref=${activeBuild.ref} sha=${args.sha}`,
     );
 
     await this.alertEmail.sendAlert({
@@ -167,16 +191,31 @@ export class BuildSyncService {
         'Um build RUNNING foi marcado como FAILED para permitir novo processamento.',
         '',
         `Build ID: ${activeBuild.id}`,
-        `Repo ID: ${repoId}`,
-        `SHA: ${sha}`,
+        `Repositorio: ${repoLabel}`,
+        `Ref original: ${activeBuild.ref}`,
+        `Escopo novo processamento: ${targetLabel}`,
+        `SHA: ${args.sha}`,
+        `Motivo: build em RUNNING ultrapassou ${staleThresholdMinutes} min sem atualizar status.`,
+        staleAgeMinutes != null
+          ? `Tempo sem atualizar: ~${staleAgeMinutes} min`
+          : 'Tempo sem atualizar: n/a',
+        '',
+        'Novo processamento = novo build para o mesmo repositorio/ref/PR e mesmo SHA atual.',
       ].join('\n'),
     });
 
     return null;
   }
 
-  private async hasActiveBuild(repoId: number, sha: string) {
-    return this.resolveActiveBlockingBuild(repoId, sha);
+  private async hasActiveBuild(args: {
+    repoId: number;
+    sha: string;
+    repoOwner?: string;
+    repoName?: string;
+    ref?: string;
+    prNumber?: number | null;
+  }) {
+    return this.resolveActiveBlockingBuild(args);
   }
 
   private buildRefKey(ref: string, prNumber: number | null) {
@@ -322,7 +361,14 @@ export class BuildSyncService {
     }
 
     if (!args.force) {
-      const queued = await this.hasActiveBuild(args.repo.id, args.sha);
+      const queued = await this.hasActiveBuild({
+        repoId: args.repo.id,
+        sha: args.sha,
+        repoOwner: args.repo.owner,
+        repoName: args.repo.name,
+        ref: args.ref,
+        prNumber: args.prNumber,
+      });
       if (queued) {
         this.logger.log(
           this.i18n.t('build_sync.skip_active', {
