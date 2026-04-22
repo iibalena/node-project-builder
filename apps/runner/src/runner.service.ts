@@ -90,6 +90,57 @@ export class RunnerService implements OnModuleInit {
     };
   }
 
+  private resolveFlutterStoreUrl(build: BuildEntity) {
+    const appId = String(build.repo?.androidAppId ?? '').trim();
+    if (!appId) {
+      return null;
+    }
+
+    return `https://play.google.com/store/apps/details?id=${encodeURIComponent(appId)}`;
+  }
+
+  private isHttpUrl(value: string) {
+    return /^https?:\/\//i.test(String(value ?? '').trim());
+  }
+
+  private resolveExecutableDownloadUrl(artifactPath: string | null) {
+    const rawPath = String(artifactPath ?? '').trim();
+    if (!rawPath) {
+      return null;
+    }
+
+    if (this.isHttpUrl(rawPath)) {
+      return rawPath;
+    }
+
+    const baseUrl = String(
+      process.env.TASK_NOTIFICATION_DOWNLOAD_BASE_URL ?? '',
+    ).trim();
+    if (!baseUrl) {
+      return null;
+    }
+
+    const execDir = String(process.env.EXECUTABLES_DIR ?? '').trim();
+    let relative = rawPath;
+    if (execDir) {
+      const normPath = rawPath.replace(/\\/g, '/').toLowerCase();
+      const normExec = execDir.replace(/\\/g, '/').toLowerCase();
+      if (normPath.startsWith(normExec)) {
+        relative = rawPath.slice(execDir.length);
+      }
+    }
+
+    const safeRelative = relative
+      .replace(/^[\\/]+/, '')
+      .replace(/\\/g, '/')
+      .split('/')
+      .filter((segment) => segment.length > 0)
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+
+    return `${baseUrl.replace(/\/$/, '')}/${safeRelative}`;
+  }
+
   private async notifyExecutableTaskStatus(build: BuildEntity) {
     if (!build.repo || build.prNumber == null) {
       return;
@@ -107,23 +158,28 @@ export class RunnerService implements OnModuleInit {
       return;
     }
 
+    if (build.status !== BuildStatus.SUCCESS) {
+      // External task endpoint expects downloadUrl/expiresAt for available artifacts.
+      return;
+    }
+
+    const downloadUrl = this.resolveExecutableDownloadUrl(build.artifactPath ?? null);
+    if (!downloadUrl) {
+      this.logger.warn(
+        `Executable task notification skipped buildId=${build.id} repo=${build.repo.owner}/${build.repo.name}: missing valid download URL. Configure TASK_NOTIFICATION_DOWNLOAD_BASE_URL or set artifactPath as HTTP URL.`,
+      );
+      return;
+    }
+
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
     const payload = {
       owner: build.repo.owner,
       name: build.repo.name,
       branch: build.ref,
       prNumber: build.prNumber,
-      buildId: build.id,
-      status: build.status,
-      executablePath: build.artifactPath ?? null,
-      error:
-        build.status === BuildStatus.FAILED
-          ? String(build.log ?? '')
-              .split('\n')
-              .filter((line) => /ERROR|erro|failed|falha/i.test(line))
-              .slice(-8)
-              .join('\n')
-              .slice(0, 1200)
-          : null,
+      downloadUrl,
+      expiresAt,
     };
 
     const send = async (keyForHeaders: string) => {
@@ -624,6 +680,11 @@ export class RunnerService implements OnModuleInit {
         const buildStartedAt = finalBuild.createdAt instanceof Date ? finalBuild.createdAt.getTime() : new Date(finalBuild.createdAt).getTime();
         const duration = Date.now() - buildStartedAt;
         if (finalBuild.status === BuildStatus.SUCCESS) {
+          const storeUrl =
+            finalBuild.repo.type === RepoType.FLUTTER
+              ? this.resolveFlutterStoreUrl(finalBuild)
+              : null;
+
           await this.alertEmail.sendBuildAlert({
             buildId: finalBuild.id,
             repoOwner: finalBuild.repo.owner,
@@ -632,6 +693,7 @@ export class RunnerService implements OnModuleInit {
             status: 'SUCCESS',
             duration,
             artifactPath: finalBuild.artifactPath ?? undefined,
+            storeUrl: storeUrl ?? undefined,
           });
         } else if (finalBuild.status === BuildStatus.FAILED) {
           const errorLog = finalBuild.log

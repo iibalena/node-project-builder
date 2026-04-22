@@ -81,6 +81,7 @@ export class AlertEmailService {
       '  To=$mailTo',
       '  Subject=$mailSubject',
       '  Body=$mailBody',
+      '  Encoding=[System.Text.Encoding]::UTF8',
       '}',
       'if ($smtpUser -and $smtpPass) {',
       '  $securePass = ConvertTo-SecureString $smtpPass -AsPlainText -Force',
@@ -178,16 +179,17 @@ export class AlertEmailService {
     log?: string;
     duration?: number;
     artifactPath?: string;
+    storeUrl?: string;
   }): Promise<{ sent: boolean; reason?: string }> {
     const subject =
       args.status === 'SUCCESS'
-        ? `[Build ${args.buildId}] ✅ ${args.repoOwner}/${args.repoName} - ${args.branch}`
-        : `[Build ${args.buildId}] ❌ ${args.repoOwner}/${args.repoName} - ${args.branch}`;
+        ? `[Build ${args.buildId}] SUCCESS ${args.repoOwner}/${args.repoName} - ${args.branch}`
+        : `[Build ${args.buildId}] FAILED ${args.repoOwner}/${args.repoName} - ${args.branch}`;
 
     const duration = args.duration ? ` (${Math.round(args.duration / 1000)}s)` : '';
     const header =
       args.status === 'SUCCESS'
-        ? `Build #${args.buildId} concluído com sucesso!${duration}`
+        ? `Build #${args.buildId} concluido com sucesso!${duration}`
         : `Build #${args.buildId} falhou.${duration}`;
 
     const body =
@@ -196,19 +198,21 @@ export class AlertEmailService {
             header,
             '',
             'Dados do build:',
-            `  Repositório: ${args.repoOwner}/${args.repoName}`,
+            `  Repositorio: ${args.repoOwner}/${args.repoName}`,
             `  Branch: ${args.branch}`,
-            `  Status: ✅ Sucesso`,
-            `  Executável: ${args.artifactPath || '(não informado)'}`,
+            `  Status: Sucesso`,
+            args.storeUrl
+              ? `  Loja: ${args.storeUrl}`
+              : `  Executavel: ${args.artifactPath || '(nao informado)'}`,
             '',
           ].join('\n')
         : [
             header,
             '',
             'Dados do build:',
-            `  Repositório: ${args.repoOwner}/${args.repoName}`,
+            `  Repositorio: ${args.repoOwner}/${args.repoName}`,
             `  Branch: ${args.branch}`,
-            `  Status: ❌ Falha`,
+            `  Status: Falha`,
             '',
             'Log de erros:',
             '---',
@@ -226,8 +230,8 @@ export class AlertEmailService {
     details?: string;
   }): Promise<{ sent: boolean; reason?: string }> {
     const typeLabel = {
-      'invalid-signature': 'Assinatura Inválida',
-      'unsupported-event': 'Evento Não Suportado',
+      'invalid-signature': 'Assinatura Invalida',
+      'unsupported-event': 'Evento Nao Suportado',
     }[args.webhook];
 
     const subject = `[Webhook Rejeitado] ${typeLabel} - ${args.repository}`;
@@ -272,6 +276,13 @@ export class AlertEmailService {
     }
 
     try {
+      const sentAt = new Date();
+      const bodyWithTimestamp = [
+        body,
+        '---',
+        `Enviado em: ${sentAt.toISOString()} (${sentAt.toLocaleString('pt-BR')})`,
+      ].join('\n');
+
       const script = this.getSmtpScript({
         host,
         port,
@@ -281,7 +292,7 @@ export class AlertEmailService {
         from,
         to,
         subject,
-        body,
+        body: bodyWithTimestamp,
       });
 
       await execFileAsync('powershell', ['-NoProfile', '-Command', script], {
