@@ -45,9 +45,7 @@ export class WebhooksController {
     return {
       ok: true,
       endpoint: 'POST /github/webhook',
-      secretConfigured: Boolean(
-        process.env.GITHUB_WEBHOOK_SECRET ?? process.env.GITHUB_APP_WEBHOOK_SECRET,
-      ),
+      secretConfigured: Boolean(process.env.GITHUB_WEBHOOK_SECRET),
       rawBodyEnabled: true,
     };
   }
@@ -64,6 +62,17 @@ export class WebhooksController {
       : 'repo-webhook';
     const repository = String(payload?.repository?.full_name ?? '');
     const ref = String(payload?.ref ?? payload?.pull_request?.head?.ref ?? '');
+
+    await this.webhooksService.saveIncomingWebhookLog({
+      delivery,
+      event,
+      source,
+      repository,
+      ref,
+      headers: req.headers as Record<string, string | string[] | undefined>,
+      rawBody,
+      parsedBody: payload,
+    });
 
     this.logger.log(
       this.i18n.t('webhook.received_details', {

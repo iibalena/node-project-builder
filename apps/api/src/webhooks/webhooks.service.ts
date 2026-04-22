@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -35,6 +37,84 @@ export class WebhooksService {
   private getCooldownMs() {
     const value = Number(process.env.BUILD_COOLDOWN_MS ?? 60000);
     return Number.isFinite(value) ? value : 60000;
+  }
+
+  private getWebhookLogsRootDir() {
+    const configured = String(process.env.WEBHOOK_LOG_DIR ?? '').trim();
+    if (configured) {
+      return path.resolve(configured);
+    }
+
+    return path.resolve(process.cwd(), 'logs', 'webhook');
+  }
+
+  private getLogDayDirName(date = new Date()) {
+    const y = String(date.getFullYear());
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}${m}${d}`;
+  }
+
+  private sanitizeFileName(value: string) {
+    return value.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120);
+  }
+
+  private normalizeHeaders(
+    headers: Record<string, string | string[] | undefined>,
+  ) {
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(headers ?? {})) {
+      if (Array.isArray(v)) {
+        result[k] = v.join(', ');
+      } else if (typeof v === 'string') {
+        result[k] = v;
+      }
+    }
+    return result;
+  }
+
+  async saveIncomingWebhookLog(args: {
+    delivery: string;
+    event: string;
+    source: string;
+    repository: string;
+    ref: string;
+    headers: Record<string, string | string[] | undefined>;
+    rawBody: Buffer;
+    parsedBody: any;
+  }) {
+    try {
+      const now = new Date();
+      const rootDir = this.getWebhookLogsRootDir();
+      const dayDir = path.join(rootDir, this.getLogDayDirName(now));
+      await fs.mkdir(dayDir, { recursive: true });
+
+      const timestamp = now.toISOString().replace(/[:.]/g, '-');
+      const delivery = this.sanitizeFileName(args.delivery || 'no-delivery');
+      const event = this.sanitizeFileName(args.event || 'no-event');
+      const fileName = `${timestamp}__${event}__${delivery}.json`;
+      const filePath = path.join(dayDir, fileName);
+
+      const rawBodyText = args.rawBody.toString('utf8');
+      const payload = {
+        receivedAtIso: now.toISOString(),
+        receivedAtLocal: now.toLocaleString('pt-BR'),
+        delivery: args.delivery,
+        event: args.event,
+        source: args.source,
+        repository: args.repository,
+        ref: args.ref,
+        headers: this.normalizeHeaders(args.headers),
+        body: args.parsedBody,
+        rawBody: rawBodyText,
+      };
+
+      await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to persist webhook log: ${err?.message ?? String(err)}`,
+      );
+    }
   }
 
   private isPrOnlyBuildsModeForRepo(repo: RepoEntity) {
@@ -162,10 +242,7 @@ export class WebhooksService {
   }
 
   verifyGithubSignature(rawBody: Buffer, headers: GithubHeaders): boolean {
-    const secret =
-      process.env.GITHUB_APP_WEBHOOK_SECRET ??
-      process.env.GITHUB_WEBHOOK_SECRET ??
-      '';
+    const secret = process.env.GITHUB_WEBHOOK_SECRET ?? '';
     if (!secret) return false;
 
     const sig = headers['x-hub-signature-256'];
@@ -187,21 +264,50 @@ export class WebhooksService {
   }
 
   private resolveWebhookTimestamp(payload: any, dateHeader?: string) {
+    const parseCandidate = (raw: unknown): number | null => {
+      if (raw == null) {
+        return null;
+      }
+
+      if (typeof raw === 'number') {
+        if (!Number.isFinite(raw)) {
+          return null;
+        }
+
+        const asMs = raw > 1_000_000_000_000 ? raw : raw * 1000;
+        return Number.isFinite(asMs) ? asMs : null;
+      }
+
+      const value = String(raw).trim();
+      if (!value) {
+        return null;
+      }
+
+      if (/^\d+$/.test(value)) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) {
+          return null;
+        }
+
+        const asMs = num > 1_000_000_000_000 ? num : num * 1000;
+        return Number.isFinite(asMs) ? asMs : null;
+      }
+
+      const parsed = new Date(value).getTime();
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
     const candidates = [
       payload?.head_commit?.timestamp,
       payload?.pull_request?.updated_at,
       payload?.pull_request?.created_at,
-      payload?.repository?.pushed_at
-        ? new Date(Number(payload?.repository?.pushed_at) * 1000).toISOString()
-        : null,
+      payload?.repository?.pushed_at,
       dateHeader,
     ];
 
     for (const raw of candidates) {
-      const value = String(raw ?? '').trim();
-      if (!value) continue;
-      const parsed = new Date(value).getTime();
-      if (Number.isFinite(parsed)) {
+      const parsed = parseCandidate(raw);
+      if (parsed != null) {
         return parsed;
       }
     }
