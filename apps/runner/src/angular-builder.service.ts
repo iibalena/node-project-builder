@@ -8,6 +8,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import { I18nService } from '../../shared/src/i18n/i18n.service';
+import { setupNpmAuthEnv } from './npm-auth.util';
 
 const exec = promisify(_exec);
 
@@ -80,6 +81,8 @@ export class AngularBuilderService {
       repoName,
     );
 
+    let npmAuthCleanup: (() => Promise<void>) | null = null;
+
     try {
       await logger.log(
         this.i18n.t('builder.start', {
@@ -114,15 +117,31 @@ export class AngularBuilderService {
       await logger.log(this.i18n.t('builder.clean_dist', { distDir }));
       await fs.promises.rm(distDir, { recursive: true, force: true });
 
+      const npmAuth = await setupNpmAuthEnv({ repoInfo });
+      npmAuthCleanup = npmAuth.cleanup;
+      if (npmAuth.enabled) {
+        await logger.log(
+          `NPM auth enabled via ${npmAuth.tokenSource} for scopes: ${npmAuth.scopes.join(', ')}`,
+        );
+      }
+
       await logger.log(
         this.i18n.t('builder.install_running', { cmd: installCmd }),
       );
-      await exec(installCmd, { cwd: repoDir, maxBuffer: 20 * 1024 * 1024 });
+      await exec(installCmd, {
+        cwd: repoDir,
+        env: npmAuth.env,
+        maxBuffer: 20 * 1024 * 1024,
+      });
       await logger.log(this.i18n.t('builder.install_finished'));
 
       const buildCmd = usePnpm ? 'pnpm run build' : 'npm run build';
       await logger.log(this.i18n.t('builder.build_running', { cmd: buildCmd }));
-      await exec(buildCmd, { cwd: repoDir, maxBuffer: 30 * 1024 * 1024 });
+      await exec(buildCmd, {
+        cwd: repoDir,
+        env: npmAuth.env,
+        maxBuffer: 30 * 1024 * 1024,
+      });
       await logger.log(this.i18n.t('builder.build_finished'));
 
       const outputDir = this.getAngularDistOutputPath(repoDir);
@@ -167,6 +186,10 @@ export class AngularBuilderService {
         status: BuildStatus.FAILED,
       });
       this.logger.error(error);
+    } finally {
+      if (npmAuthCleanup) {
+        await npmAuthCleanup();
+      }
     }
   }
 }
