@@ -137,6 +137,7 @@ export class BuildSyncService {
     repoName?: string;
     ref?: string;
     prNumber?: number | null;
+    repoType?: RepoType;
   }) {
     const activeBuild = await this.buildRepository.findOne({
       where: {
@@ -184,6 +185,36 @@ export class BuildSyncService {
       `Marked stale RUNNING build as FAILED buildId=${activeBuild.id} repo=${repoLabel} ref=${activeBuild.ref} sha=${args.sha}`,
     );
 
+    const isExecutableRepo =
+      args.repoType === RepoType.TYPESCRIPT || args.repoType === RepoType.ANGULAR;
+    if (isExecutableRepo && activeBuild.prNumber != null && args.repoOwner && args.repoName) {
+      const staleComment = [
+        `⏱️ Build #${activeBuild.id} travou e foi abortado por timeout de inatividade.`,
+        `- Repo: ${args.repoOwner}/${args.repoName}`,
+        `- Branch: ${activeBuild.ref}`,
+        staleAgeMinutes != null
+          ? `- Tempo sem resposta: ~${staleAgeMinutes} min (limite: ${staleThresholdMinutes} min)`
+          : `- Limite: ${staleThresholdMinutes} min`,
+        '',
+        'Um novo build foi enfileirado automaticamente para o mesmo commit.',
+      ].join('\n');
+      try {
+        await this.github.postPullRequestComment({
+          owner: args.repoOwner,
+          repo: args.repoName,
+          prNumber: activeBuild.prNumber,
+          body: staleComment,
+        });
+        this.logger.log(
+          `Stale build PR comment posted buildId=${activeBuild.id} repo=${repoLabel} pr=${activeBuild.prNumber}`,
+        );
+      } catch (commentErr: any) {
+        this.logger.warn(
+          `Stale build PR comment failed buildId=${activeBuild.id} repo=${repoLabel}: ${commentErr?.message ?? String(commentErr)}`,
+        );
+      }
+    }
+
     await this.alertEmail.sendAlert({
       key: `stale-running-build:${activeBuild.id}`,
       subject: `[node-project-builder] Build RUNNING travado: #${activeBuild.id}`,
@@ -214,6 +245,7 @@ export class BuildSyncService {
     repoName?: string;
     ref?: string;
     prNumber?: number | null;
+    repoType?: RepoType;
   }) {
     return this.resolveActiveBlockingBuild(args);
   }
@@ -368,6 +400,7 @@ export class BuildSyncService {
         repoName: args.repo.name,
         ref: args.ref,
         prNumber: args.prNumber,
+        repoType: args.repo.type,
       });
       if (queued) {
         this.logger.log(
