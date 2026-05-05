@@ -8,6 +8,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import { I18nService } from '../../shared/src/i18n/i18n.service';
+import { setupNpmAuthEnv } from './npm-auth.util';
 
 const exec = promisify(_exec);
 
@@ -131,6 +132,16 @@ export class NodeBuilderService {
     await fs.promises.rm(dir, { recursive: true, force: true });
   }
 
+  private getInstallTimeoutMs() {
+    const value = Number(process.env.INSTALL_TIMEOUT_MS ?? 300000);
+    return Number.isFinite(value) ? value : 300000;
+  }
+
+  private getBuildTimeoutMs() {
+    const value = Number(process.env.BUILD_TIMEOUT_MS ?? 600000);
+    return Number.isFinite(value) ? value : 600000;
+  }
+
   private getCompileTimeoutMs() {
     const value = Number(process.env.COMPILE_TIMEOUT_MS ?? 600000);
     return Number.isFinite(value) ? value : 600000;
@@ -163,6 +174,8 @@ export class NodeBuilderService {
       repoOwner,
       repoName,
     );
+    let npmAuthCleanup: (() => Promise<void>) | null = null;
+
     try {
       await logger.log(
         this.i18n.t('builder.start', {
@@ -196,15 +209,33 @@ export class NodeBuilderService {
       await logger.log(this.i18n.t('builder.clean_dist', { distDir }));
       await this.removeDirWithRetry(distDir);
 
+      const npmAuth = await setupNpmAuthEnv({ repoInfo });
+      npmAuthCleanup = npmAuth.cleanup;
+      if (npmAuth.enabled) {
+        await logger.log(
+          `NPM auth enabled via ${npmAuth.tokenSource} for scopes: ${npmAuth.scopes.join(', ')}`,
+        );
+      }
+
       await logger.log(this.i18n.t('builder.install_running', { cmd: installCmd }));
-      await exec(installCmd, { cwd: repoDir, maxBuffer: 10 * 1024 * 1024 });
+      await exec(installCmd, {
+        cwd: repoDir,
+        env: npmAuth.env,
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: this.getInstallTimeoutMs(),
+      });
       await logger.log(this.i18n.t('builder.install_finished'));
 
       const buildCmd =
         repoInfo?.buildCommand ??
         (usePnpm ? 'pnpm run build' : 'npm run build');
       await logger.log(this.i18n.t('builder.build_running', { cmd: buildCmd }));
-      await exec(buildCmd, { cwd: repoDir, maxBuffer: 20 * 1024 * 1024 });
+      await exec(buildCmd, {
+        cwd: repoDir,
+        env: npmAuth.env,
+        maxBuffer: 20 * 1024 * 1024,
+        timeout: this.getBuildTimeoutMs(),
+      });
       await logger.log(this.i18n.t('builder.build_finished'));
 
       const compileScript = path.join(repoDir, 'scripts', 'compile.js');
@@ -214,6 +245,7 @@ export class NodeBuilderService {
           `node --unhandled-rejections=strict ${path.relative(repoDir, compileScript)}`,
           {
           cwd: repoDir,
+          env: npmAuth.env,
           maxBuffer: 20 * 1024 * 1024,
           timeout: this.getCompileTimeoutMs(),
           },
@@ -234,7 +266,11 @@ export class NodeBuilderService {
         const scriptName = pkg.scripts['nexe:win'] ? 'nexe:win' : 'nexe';
         const nexeCmd = usePnpm ? `pnpm run ${scriptName}` : `npm run ${scriptName}`;
         await logger.log(this.i18n.t('builder.nexe_running', { scriptName, cmd: nexeCmd }));
-        await exec(nexeCmd, { cwd: repoDir, maxBuffer: 50 * 1024 * 1024 });
+        await exec(nexeCmd, {
+          cwd: repoDir,
+          env: npmAuth.env,
+          maxBuffer: 50 * 1024 * 1024,
+        });
         await logger.log(this.i18n.t('builder.nexe_finished', { scriptName }));
       } else {
         await logger.log(this.i18n.t('builder.nexe_missing'));
@@ -286,6 +322,10 @@ export class NodeBuilderService {
         status: BuildStatus.FAILED,
       });
       this.logger.error(error);
+    } finally {
+      if (npmAuthCleanup) {
+        await npmAuthCleanup();
+      }
     }
   }
 }
