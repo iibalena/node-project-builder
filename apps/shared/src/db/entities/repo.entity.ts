@@ -40,6 +40,9 @@ export class RepoEntity extends BaseEntity {
   @Column({ name: 'use_legacy_peer_deps', type: 'boolean', default: false })
   useLegacyPeerDeps: boolean;
 
+  @Column({ name: 'node_version', type: 'varchar', length: 50, nullable: true })
+  nodeVersion: string | null;
+
   @Column({ name: 'github_installation_id', type: 'bigint', nullable: true })
   githubInstallationId: string | null;
 

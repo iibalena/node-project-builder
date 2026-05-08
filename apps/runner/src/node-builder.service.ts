@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { I18nService } from '../../shared/src/i18n/i18n.service';
 import { setupNpmAuthEnv } from './npm-auth.util';
+import { ensureNodeVersion } from './node-version.util';
 
 const exec = promisify(_exec);
 
@@ -101,6 +102,10 @@ export class NodeBuilderService {
     return process.env.EXECUTABLES_DIR ?? '';
   }
 
+  private getMasterExecutablesDir() {
+    return process.env.MASTER_EXECUTABLES_DIR ?? '';
+  }
+
   private sanitizeSegment(value: string) {
     return value.replace(/[\\/:*?"<>|]/g, '-').trim();
   }
@@ -130,6 +135,35 @@ export class NodeBuilderService {
 
   private async removeDirIfExists(dir: string) {
     await fs.promises.rm(dir, { recursive: true, force: true });
+  }
+
+  private async copyRootExampleFilesToDir(
+    repoDir: string,
+    targetDir: string,
+    logger: BuildLogger,
+  ) {
+    const rootEntries = await fs.promises.readdir(repoDir, {
+      withFileTypes: true,
+    });
+    const exampleFiles = rootEntries.filter(
+      (entry) => entry.isFile() && /\.example$/i.test(entry.name),
+    );
+
+    if (exampleFiles.length === 0) {
+      return;
+    }
+
+    await fs.promises.mkdir(targetDir, { recursive: true });
+
+    for (const file of exampleFiles) {
+      const sourcePath = path.join(repoDir, file.name);
+      const destinationPath = path.join(targetDir, file.name);
+      await fs.promises.copyFile(sourcePath, destinationPath);
+    }
+
+    await logger.log(
+      `Copied ${exampleFiles.length} *.example file(s) to ${targetDir}`,
+    );
   }
 
   private getInstallTimeoutMs() {
@@ -211,6 +245,11 @@ export class NodeBuilderService {
 
       const npmAuth = await setupNpmAuthEnv({ repoInfo });
       npmAuthCleanup = npmAuth.cleanup;
+      const runtimeEnv = await ensureNodeVersion(
+        repoInfo?.nodeVersion,
+        npmAuth.env,
+        logger,
+      );
       if (npmAuth.enabled) {
         await logger.log(
           `NPM auth enabled via ${npmAuth.tokenSource} for scopes: ${npmAuth.scopes.join(', ')}`,
@@ -220,7 +259,7 @@ export class NodeBuilderService {
       await logger.log(this.i18n.t('builder.install_running', { cmd: installCmd }));
       await exec(installCmd, {
         cwd: repoDir,
-        env: npmAuth.env,
+        env: runtimeEnv,
         maxBuffer: 10 * 1024 * 1024,
         timeout: this.getInstallTimeoutMs(),
       });
@@ -232,7 +271,7 @@ export class NodeBuilderService {
       await logger.log(this.i18n.t('builder.build_running', { cmd: buildCmd }));
       await exec(buildCmd, {
         cwd: repoDir,
-        env: npmAuth.env,
+        env: runtimeEnv,
         maxBuffer: 20 * 1024 * 1024,
         timeout: this.getBuildTimeoutMs(),
       });
@@ -245,7 +284,7 @@ export class NodeBuilderService {
           `node --unhandled-rejections=strict ${path.relative(repoDir, compileScript)}`,
           {
           cwd: repoDir,
-          env: npmAuth.env,
+          env: runtimeEnv,
           maxBuffer: 20 * 1024 * 1024,
           timeout: this.getCompileTimeoutMs(),
           },
@@ -268,7 +307,7 @@ export class NodeBuilderService {
         await logger.log(this.i18n.t('builder.nexe_running', { scriptName, cmd: nexeCmd }));
         await exec(nexeCmd, {
           cwd: repoDir,
-          env: npmAuth.env,
+          env: runtimeEnv,
           maxBuffer: 50 * 1024 * 1024,
         });
         await logger.log(this.i18n.t('builder.nexe_finished', { scriptName }));
@@ -301,12 +340,24 @@ export class NodeBuilderService {
       await fs.promises.copyFile(exePath, stagingPath);
       await logger.log(this.i18n.t('builder.artifact_staged', { stagingPath }));
 
-      const executablesDir = this.getExecutablesDir() || artifactsDir;
-      const finalDir = path.join(executablesDir, repoName, refSegment);
+      const isMasterBuild = refSegment === 'master' && !build.prNumber;
+      const masterExecutablesDir = this.getMasterExecutablesDir();
+      const baseExecutablesDir =
+        isMasterBuild && masterExecutablesDir
+          ? masterExecutablesDir
+          : this.getExecutablesDir() || artifactsDir;
+
+      const finalDir = isMasterBuild
+        ? path.join(baseExecutablesDir, repoName)
+        : path.join(baseExecutablesDir, repoName, refSegment);
       await fs.promises.mkdir(finalDir, { recursive: true });
       const finalPath = path.join(finalDir, artifactFileName);
       await fs.promises.copyFile(stagingPath, finalPath);
       await logger.log(this.i18n.t('builder.artifact_copied', { finalPath }));
+
+      if (isMasterBuild && masterExecutablesDir) {
+        await this.copyRootExampleFilesToDir(repoDir, finalDir, logger);
+      }
 
       await this.removeDirIfExists(stagingDir);
       await logger.log(this.i18n.t('builder.staging_cleaned', { stagingDir }));

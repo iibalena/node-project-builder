@@ -69,6 +69,7 @@ export class ReposService {
       isActive: true,
       installCommand: data.installCommand ?? null,
       useLegacyPeerDeps: data.useLegacyPeerDeps ?? false,
+      nodeVersion: data.nodeVersion?.trim() || null,
       androidAppId: null,
       iosBundleId: null,
     });
@@ -155,6 +156,13 @@ export class ReposService {
 
     if (typeof data.useLegacyPeerDeps === 'boolean') {
       repo.useLegacyPeerDeps = data.useLegacyPeerDeps;
+    }
+
+    if (data.nodeVersion === null) {
+      repo.nodeVersion = null;
+    } else if (typeof data.nodeVersion === 'string') {
+      const value = data.nodeVersion.trim();
+      repo.nodeVersion = value.length > 0 ? value : null;
     }
 
     const saved = await this.repoRepository.save(repo);

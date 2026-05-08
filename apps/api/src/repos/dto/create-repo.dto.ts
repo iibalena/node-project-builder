@@ -39,4 +39,9 @@ export class CreateRepoDto {
   @IsOptional()
   @IsBoolean()
   useLegacyPeerDeps?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  nodeVersion?: string | null;
 }

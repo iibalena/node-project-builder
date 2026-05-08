@@ -38,4 +38,9 @@ export class UpdateRepoDto {
   @IsOptional()
   @IsBoolean()
   useLegacyPeerDeps?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  nodeVersion?: string | null;
 }

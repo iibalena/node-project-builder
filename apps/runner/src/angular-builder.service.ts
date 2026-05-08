@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { I18nService } from '../../shared/src/i18n/i18n.service';
 import { setupNpmAuthEnv } from './npm-auth.util';
+import { ensureNodeVersion } from './node-version.util';
 
 const exec = promisify(_exec);
 
@@ -28,6 +29,43 @@ export class AngularBuilderService {
 
   private getArtifactsRoot() {
     return process.env.ARTIFACTS_DIR ?? path.join(process.cwd(), 'artifacts');
+  }
+
+  private getExecutablesDir() {
+    return process.env.EXECUTABLES_DIR ?? '';
+  }
+
+  private getMasterExecutablesDir() {
+    return process.env.MASTER_EXECUTABLES_DIR ?? '';
+  }
+
+  private async copyRootExampleFilesToDir(
+    repoDir: string,
+    targetDir: string,
+    logger: BuildLogger,
+  ) {
+    const rootEntries = await fs.promises.readdir(repoDir, {
+      withFileTypes: true,
+    });
+    const exampleFiles = rootEntries.filter(
+      (entry) => entry.isFile() && /\.example$/i.test(entry.name),
+    );
+
+    if (exampleFiles.length === 0) {
+      return;
+    }
+
+    await fs.promises.mkdir(targetDir, { recursive: true });
+
+    for (const file of exampleFiles) {
+      const sourcePath = path.join(repoDir, file.name);
+      const destinationPath = path.join(targetDir, file.name);
+      await fs.promises.copyFile(sourcePath, destinationPath);
+    }
+
+    await logger.log(
+      `Copied ${exampleFiles.length} *.example file(s) to ${targetDir}`,
+    );
   }
 
   private getAngularDistOutputPath(repoDir: string): string {
@@ -119,6 +157,11 @@ export class AngularBuilderService {
 
       const npmAuth = await setupNpmAuthEnv({ repoInfo });
       npmAuthCleanup = npmAuth.cleanup;
+      const runtimeEnv = await ensureNodeVersion(
+        repoInfo?.nodeVersion,
+        npmAuth.env,
+        logger,
+      );
       if (npmAuth.enabled) {
         await logger.log(
           `NPM auth enabled via ${npmAuth.tokenSource} for scopes: ${npmAuth.scopes.join(', ')}`,
@@ -130,7 +173,7 @@ export class AngularBuilderService {
       );
       await exec(installCmd, {
         cwd: repoDir,
-        env: npmAuth.env,
+        env: runtimeEnv,
         maxBuffer: 20 * 1024 * 1024,
       });
       await logger.log(this.i18n.t('builder.install_finished'));
@@ -139,7 +182,7 @@ export class AngularBuilderService {
       await logger.log(this.i18n.t('builder.build_running', { cmd: buildCmd }));
       await exec(buildCmd, {
         cwd: repoDir,
-        env: npmAuth.env,
+        env: runtimeEnv,
         maxBuffer: 30 * 1024 * 1024,
       });
       await logger.log(this.i18n.t('builder.build_finished'));
@@ -165,8 +208,17 @@ export class AngularBuilderService {
         ? String(build.prNumber)
         : this.sanitizeSegment(build.ref || 'master');
 
-      const artifactsRoot = this.getArtifactsRoot();
-      const finalDir = path.join(artifactsRoot, repoName, refSegment, 'dist');
+      const isMasterBuild = refSegment === 'master' && !build.prNumber;
+      const masterExecutablesDir = this.getMasterExecutablesDir();
+      const baseDir =
+        isMasterBuild && masterExecutablesDir
+          ? masterExecutablesDir
+          : this.getArtifactsRoot();
+
+      const masterProjectDir = path.join(baseDir, repoName);
+      const finalDir = isMasterBuild
+        ? path.join(masterProjectDir, 'dist')
+        : path.join(baseDir, repoName, refSegment, 'dist');
       await fs.promises.mkdir(path.dirname(finalDir), { recursive: true });
       await fs.promises.rm(finalDir, { recursive: true, force: true });
       await fs.promises.cp(outputDir, finalDir, { recursive: true });
@@ -174,6 +226,10 @@ export class AngularBuilderService {
       await logger.log(
         this.i18n.t('builder.angular_artifact_copied', { finalDir }),
       );
+
+      if (isMasterBuild && masterExecutablesDir) {
+        await this.copyRootExampleFilesToDir(repoDir, masterProjectDir, logger);
+      }
 
       await this.buildRepository.update(build.id, {
         status: BuildStatus.SUCCESS,

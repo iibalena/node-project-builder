@@ -442,19 +442,10 @@ export class FlutterBuilderService {
         throw new Error(this.i18n.t('builder.flutter_appbundle_not_found'));
       }
 
-      const repoName = this.sanitizeSegment(repo?.name ?? 'unknown');
-      const refSegment = build.prNumber
-        ? String(build.prNumber)
-        : this.sanitizeSegment(build.ref || 'master');
-      const finalDir = path.join(this.getArtifactsRoot(), repoName, refSegment, 'android');
-      await fs.promises.mkdir(finalDir, { recursive: true });
-
-      const finalPath = path.join(finalDir, path.basename(appBundlePath));
-      await fs.promises.copyFile(appBundlePath, finalPath);
       await logger.log(
         this.i18n.t('builder.flutter_artifact_copied', {
           artifactType: 'appbundle',
-          finalPath,
+          finalPath: appBundlePath,
         }),
       );
 
@@ -483,7 +474,7 @@ export class FlutterBuilderService {
 
       await this.buildRepository.update(build.id, {
         status: BuildStatus.SUCCESS,
-        artifactPath: finalPath,
+        artifactPath: appBundlePath,
       });
     } catch (err: any) {
       const error = err?.message ?? String(err);
