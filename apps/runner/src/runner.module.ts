@@ -7,6 +7,7 @@ import { BuildPreparationService } from './build-prep.service';
 import { NodeBuilderService } from './node-builder.service';
 import { AngularBuilderService } from './angular-builder.service';
 import { FlutterBuilderService } from './flutter-builder.service';
+import { JavaBuilderService } from './java-builder.service';
 import { GitHubService } from './github.service';
 import { BuildSyncService } from './build-sync.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -31,6 +32,7 @@ import { AlertEmailService } from '../../shared/src/notifications/alert-email.se
     NodeBuilderService,
     AngularBuilderService,
     FlutterBuilderService,
+    JavaBuilderService,
     GitHubService,
     BuildSyncService,
     AlertEmailService,

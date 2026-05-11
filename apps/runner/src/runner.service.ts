@@ -12,6 +12,7 @@ import { BuildPreparationService } from './build-prep.service';
 import { NodeBuilderService } from './node-builder.service';
 import { AngularBuilderService } from './angular-builder.service';
 import { FlutterBuilderService } from './flutter-builder.service';
+import { JavaBuilderService } from './java-builder.service';
 import { BuildSyncService } from './build-sync.service';
 import { I18nService } from '../../shared/src/i18n/i18n.service';
 import { RepoType } from '../../shared/src/db/entities/repo-type.enum';
@@ -324,6 +325,7 @@ export class RunnerService implements OnModuleInit {
     private readonly nodeBuilder: NodeBuilderService,
     private readonly angularBuilder: AngularBuilderService,
     private readonly flutterBuilder: FlutterBuilderService,
+    private readonly javaBuilder: JavaBuilderService,
     private readonly buildSync: BuildSyncService,
     private readonly github: GitHubService,
     private readonly i18n: I18nService,
@@ -622,6 +624,8 @@ export class RunnerService implements OnModuleInit {
             );
           }
         }
+      } else if (repoType === RepoType.JAVA) {
+        await this.javaBuilder.build(build, prepared.repoDir, repo.owner, repo.name);
       } else if (repoType === RepoType.TYPESCRIPT) {
         await this.nodeBuilder.build(build, prepared.repoDir, repo.owner, repo.name);
       } else {
