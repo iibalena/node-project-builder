@@ -338,7 +338,8 @@ export class RunnerService implements OnModuleInit {
 
     if (
       build.repo.type !== RepoType.TYPESCRIPT &&
-      build.repo.type !== RepoType.ANGULAR
+      build.repo.type !== RepoType.ANGULAR &&
+      build.repo.type !== RepoType.JAVA
     ) {
       return;
     }
