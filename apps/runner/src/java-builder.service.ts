@@ -33,6 +33,60 @@ export class JavaBuilderService {
     return process.env.MASTER_EXECUTABLES_DIR ?? '';
   }
 
+  private getJavaSdkRoot() {
+    return (
+      process.env.JAVA_SDK_ROOT ??
+      process.env.JAVA_HOME_ROOT ??
+      (process.platform === 'win32'
+        ? 'C:\\builder\\sdk\\java'
+        : path.join(path.sep, 'builder', 'sdk', 'java'))
+    );
+  }
+
+  private findInstalledJavaHome(requestedVersion: string): string | null {
+    const sdkRoot = this.getJavaSdkRoot();
+    try {
+      const versionMatcher = requestedVersion.trim();
+      const entries = fs.readdirSync(sdkRoot, { withFileTypes: true });
+      const candidates = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join(sdkRoot, entry.name));
+
+      for (const candidate of candidates) {
+        const candidateName = path.basename(candidate).toLowerCase();
+        if (candidateName.includes(versionMatcher.toLowerCase())) {
+          return candidate;
+        }
+
+        if (versionMatcher.startsWith('1.') && candidateName.includes(`jdk-${versionMatcher}`)) {
+          return candidate;
+        }
+      }
+    } catch {
+      // ignore invalid SDK root or missing directory
+    }
+    return null;
+  }
+
+  private getJavaCommandEnv(javaVersionFromFile: string | null) {
+    const env = { ...process.env } as NodeJS.ProcessEnv;
+    const requestedJavaVersion = javaVersionFromFile?.trim();
+    let javaHome = String(env.JAVA_HOME ?? '').trim();
+
+    if (requestedJavaVersion) {
+      const installedJavaHome = this.findInstalledJavaHome(requestedJavaVersion);
+      if (installedJavaHome) {
+        javaHome = installedJavaHome;
+      }
+      if (javaHome) {
+        env.JAVA_HOME = javaHome;
+        env.PATH = `${path.join(javaHome, 'bin')}${path.delimiter}${env.PATH}`;
+      }
+    }
+
+    return env;
+  }
+
   private sanitizeSegment(value: string) {
     return value.replace(/[\\/:*?"<>|]/g, '-').trim();
   }
@@ -146,21 +200,28 @@ export class JavaBuilderService {
       const mvnCmd = this.getMavenCommand(repoDir);
       await logger.log(`Using Maven command: ${mvnCmd}`);
 
+      const execEnv = this.getJavaCommandEnv(javaVersionFromFile);
+      if (javaVersionFromFile && !execEnv.JAVA_HOME) {
+        await logger.log(
+          `Java version ${javaVersionFromFile} requested, but no matching JDK found in ${this.getJavaSdkRoot()}. Using existing JAVA_HOME instead.`,
+        );
+      }
+
       // Clean and compile
       const cleanCmd = `${mvnCmd} clean`;
       await logger.log(this.i18n.t('builder.java_clean_running', { cmd: cleanCmd }));
       await exec(cleanCmd, {
         cwd: repoDir,
+        env: execEnv,
         maxBuffer: 20 * 1024 * 1024,
       });
       await logger.log(this.i18n.t('builder.java_clean_finished'));
 
       // Package
-      const packageCmd = `${mvnCmd} package -DskipTests`;
+      const packageCmd = `${mvnCmd} package -DskipTests -U`;
       await logger.log(this.i18n.t('builder.java_package_running', { cmd: packageCmd }));
       await exec(packageCmd, {
-        cwd: repoDir,
-        maxBuffer: 30 * 1024 * 1024,
+        cwd: repoDir,        env: execEnv,        maxBuffer: 30 * 1024 * 1024,
       });
       await logger.log(this.i18n.t('builder.java_package_finished'));
 
