@@ -80,8 +80,28 @@ export class JavaBuilderService {
       }
       if (javaHome) {
         env.JAVA_HOME = javaHome;
-        env.PATH = `${path.join(javaHome, 'bin')}${path.delimiter}${env.PATH}`;
       }
+    }
+
+    const originalPath = String(env.PATH ?? env.Path ?? '').trim();
+    const systemRoot = String(env.SystemRoot ?? env.SYSTEMROOT ?? 'C:\\Windows').trim();
+    const defaultSystemPaths = [
+      path.join(systemRoot, 'System32'),
+      path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0'),
+    ];
+
+    const pathSegments = [
+      javaHome ? path.join(javaHome, 'bin') : null,
+      originalPath || null,
+      ...defaultSystemPaths,
+    ]
+      .filter((segment): segment is string => Boolean(segment))
+      .map((segment) => segment.trim())
+      .filter((segment, index, self) => segment.length > 0 && self.indexOf(segment) === index);
+
+    env.PATH = pathSegments.join(path.delimiter);
+    if (!env.ComSpec) {
+      env.ComSpec = path.join(systemRoot, 'System32', 'cmd.exe');
     }
 
     return env;

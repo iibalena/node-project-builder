@@ -166,9 +166,8 @@ export class RunnerService implements OnModuleInit {
 
     const downloadUrl = this.resolveExecutableDownloadUrl(build.artifactPath ?? null);
     if (!downloadUrl) {
-      this.logger.warn(
-        `Executable task notification skipped buildId=${build.id} repo=${build.repo.owner}/${build.repo.name}: missing valid download URL. Configure TASK_NOTIFICATION_DOWNLOAD_BASE_URL or set artifactPath as HTTP URL.`,
-      );
+      // No public download URL available, notification will be skipped silently.
+      // This is normal if TASK_NOTIFICATION_DOWNLOAD_BASE_URL is not configured.
       return;
     }
 
