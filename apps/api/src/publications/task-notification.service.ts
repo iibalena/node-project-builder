@@ -1,45 +1,36 @@
 import { Injectable, Logger } from '@nestjs/common';
 import https from 'node:https';
 import http from 'node:http';
+import {
+  getTaskNotificationAuthHeaders,
+  getTaskNotificationWebhookKey,
+  getTaskNotificationWebhookUrl,
+  isTaskNotificationEnabled,
+  tryDecodeTaskNotificationWebhookKey,
+} from '../../../shared/src/notifications/task-notification.config';
 
 @Injectable()
 export class TaskNotificationService {
   private readonly logger = new Logger(TaskNotificationService.name);
 
   private getWebhookUrl() {
-    return String(process.env.TASK_NOTIFICATION_WEBHOOK_URL ?? '').trim();
+    return getTaskNotificationWebhookUrl();
   }
 
   private getWebhookKey() {
-    return String(process.env.TASK_NOTIFICATION_WEBHOOK_KEY ?? '').trim();
+    return getTaskNotificationWebhookKey();
   }
 
   private isEnabled() {
-    return this.getWebhookUrl().length > 0;
+    return isTaskNotificationEnabled();
   }
 
   private tryDecodeWebhookKey(rawKey: string) {
-    if (!rawKey.includes('%')) {
-      return rawKey;
-    }
-
-    try {
-      return decodeURIComponent(rawKey);
-    } catch {
-      return rawKey;
-    }
+    return tryDecodeTaskNotificationWebhookKey(rawKey);
   }
 
   private getAuthHeaders(key: string) {
-    if (!key) {
-      return {};
-    }
-
-    return {
-      'X-Task-Notification-Key': key,
-      'x-api-key': key,
-      Authorization: `Bearer ${key}`,
-    };
+    return getTaskNotificationAuthHeaders(key);
   }
 
   async notifyBuildAvailable(args: {
