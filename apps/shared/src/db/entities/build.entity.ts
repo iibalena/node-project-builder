@@ -45,4 +45,7 @@ export class BuildEntity extends BaseEntity {
 
   @Column({ name: 'artifact_path', type: 'text', nullable: true })
   artifactPath: string | null;
+
+  @Column({ name: 'github_check_run_id', type: 'bigint', nullable: true })
+  githubCheckRunId: number | null;
 }

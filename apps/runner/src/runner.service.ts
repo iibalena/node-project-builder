@@ -382,6 +382,85 @@ export class RunnerService implements OnModuleInit {
     }
   }
 
+  private async createGitHubCheckRun(build: BuildEntity) {
+    if (!build.repo) {
+      return;
+    }
+
+    try {
+      const checkRunName = `Build: ${build.repo.owner}/${build.repo.name}`;
+      const result = await this.github.createCheckRun({
+        owner: build.repo.owner,
+        repo: build.repo.name,
+        name: checkRunName,
+        head_sha: build.commitSha ?? '',
+        status: 'in_progress',
+      });
+
+      if (result && result.id) {
+        build.githubCheckRunId = result.id;
+        await this.buildRepository.save(build);
+        this.logger.log(
+          `GitHub check run created buildId=${build.id} checkRunId=${result.id}`,
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `GitHub check run creation failed buildId=${build.id}: ${err?.message ?? String(err)}`,
+      );
+    }
+  }
+
+  private async updateGitHubCheckRun(build: BuildEntity) {
+    if (!build.repo || !build.githubCheckRunId) {
+      return;
+    }
+
+    try {
+      const status = 'completed';
+      const conclusion =
+        build.status === BuildStatus.SUCCESS ? 'success' : 'failure';
+
+      const output: { title: string; summary: string; text?: string } = {
+        title: `Build ${conclusion.toUpperCase()}`,
+        summary: '',
+      };
+
+      if (build.status === BuildStatus.SUCCESS) {
+        output.summary = `✅ Build completed successfully`;
+        if (build.artifactPath) {
+          output.summary += `\n\nArtifact: ${build.artifactPath}`;
+        }
+      } else {
+        const errorLines = (build.log ?? '')
+          .split('\n')
+          .filter((line) => /ERROR|erro|failed|falha/i.test(line))
+          .slice(-5)
+          .join('\n')
+          .slice(0, 800);
+
+        output.summary = `❌ Build failed${errorLines ? '\n\n' + errorLines : ''}`;
+      }
+
+      await this.github.updateCheckRun({
+        owner: build.repo.owner,
+        repo: build.repo.name,
+        check_run_id: build.githubCheckRunId,
+        status,
+        conclusion: conclusion as 'success' | 'failure',
+        output,
+      });
+
+      this.logger.log(
+        `GitHub check run updated buildId=${build.id} checkRunId=${build.githubCheckRunId} status=${conclusion}`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `GitHub check run update failed buildId=${build.id}: ${err?.message ?? String(err)}`,
+      );
+    }
+  }
+
   onModuleInit() {
     const intervalMs = Number(process.env.POLL_INTERVAL_MS ?? 3000);
     const syncOnStart =
@@ -511,6 +590,9 @@ export class RunnerService implements OnModuleInit {
       await this.buildRepository.save(build);
 
       this.logger.log(this.i18n.t('runner.build_marked_running', { buildId: build.id }));
+
+      // Create GitHub check run to show build status
+      await this.createGitHubCheckRun(build);
 
       const repo = build.repo;
       if (!repo) {
@@ -715,6 +797,9 @@ export class RunnerService implements OnModuleInit {
             duration,
           });
         }
+
+        // Update GitHub check run with final status
+        await this.updateGitHubCheckRun(finalBuild);
 
         await this.notifyExecutableTaskStatus(finalBuild);
         await this.notifyExecutablePrComment(finalBuild);

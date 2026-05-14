@@ -244,4 +244,85 @@ export class GitHubService {
       token,
     });
   }
-}
+
+  async createCheckRun(args: {
+    owner: string;
+    repo: string;
+    name: string;
+    head_sha: string;
+    status: 'queued' | 'in_progress' | 'completed';
+    conclusion?: 'success' | 'failure' | 'neutral' | 'cancelled' | 'skipped' | 'timed_out' | 'action_required';
+    details_url?: string;
+    output?: { title: string; summary: string; text?: string };
+  }) {
+    const token = this.token;
+    if (!token) {
+      throw new Error(this.i18n.t('github.token_missing'));
+    }
+
+    const body = {
+      name: args.name,
+      head_sha: args.head_sha,
+      status: args.status,
+      conclusion: args.conclusion,
+      details_url: args.details_url,
+      output: args.output,
+    };
+
+    try {
+      const result = await this.requestJsonWithBodyOnce<{ id: number }>({
+        path: `/repos/${args.owner}/${args.repo}/check-runs`,
+        method: 'POST',
+        body,
+        token,
+      });
+
+      return result;
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to create check run: ${err?.message ?? String(err)}`,
+      );
+      // Don't throw, just log - check runs are optional
+      return null;
+    }
+  }
+
+  async updateCheckRun(args: {
+    owner: string;
+    repo: string;
+    check_run_id: number;
+    status: 'queued' | 'in_progress' | 'completed';
+    conclusion?: 'success' | 'failure' | 'neutral' | 'cancelled' | 'skipped' | 'timed_out' | 'action_required';
+    details_url?: string;
+    output?: { title: string; summary: string; text?: string };
+  }) {
+    const token = this.token;
+    if (!token) {
+      throw new Error(this.i18n.t('github.token_missing'));
+    }
+
+    const body = {
+      status: args.status,
+      conclusion: args.conclusion,
+      details_url: args.details_url,
+      output: args.output,
+    };
+
+    try {
+      await this.requestJsonWithBodyOnce({
+        path: `/repos/${args.owner}/${args.repo}/check-runs/${args.check_run_id}`,
+        method: 'PATCH',
+        body,
+        token,
+      });
+
+      return { success: true };
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to update check run: ${err?.message ?? String(err)}`,
+      );
+      // Don't throw, just log - check runs are optional
+      return null;
+    }
+  }
+
