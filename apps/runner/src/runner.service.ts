@@ -18,6 +18,13 @@ import { I18nService } from '../../shared/src/i18n/i18n.service';
 import { RepoType } from '../../shared/src/db/entities/repo-type.enum';
 import { AlertEmailService } from '../../shared/src/notifications/alert-email.service';
 import { GitHubService } from './github.service';
+import {
+  getTaskNotificationAuthHeaders,
+  getTaskNotificationDownloadBaseUrl,
+  getTaskNotificationWebhookKey,
+  getTaskNotificationWebhookUrl,
+  tryDecodeTaskNotificationWebhookKey,
+} from '../../shared/src/notifications/task-notification.config';
 
 @Injectable()
 export class RunnerService implements OnModuleInit {
@@ -60,35 +67,19 @@ export class RunnerService implements OnModuleInit {
   }
 
   private getTaskWebhookUrl() {
-    return String(process.env.TASK_NOTIFICATION_WEBHOOK_URL ?? '').trim();
+    return getTaskNotificationWebhookUrl();
   }
 
   private getTaskWebhookKey() {
-    return String(process.env.TASK_NOTIFICATION_WEBHOOK_KEY ?? '').trim();
+    return getTaskNotificationWebhookKey();
   }
 
   private tryDecodeTaskWebhookKey(rawKey: string) {
-    if (!rawKey.includes('%')) {
-      return rawKey;
-    }
-
-    try {
-      return decodeURIComponent(rawKey);
-    } catch {
-      return rawKey;
-    }
+    return tryDecodeTaskNotificationWebhookKey(rawKey);
   }
 
   private getTaskAuthHeaders(key: string): Record<string, string> {
-    if (!key) {
-      return {};
-    }
-
-    return {
-      'X-Task-Notification-Key': key,
-      'x-api-key': key,
-      Authorization: `Bearer ${key}`,
-    };
+    return getTaskNotificationAuthHeaders(key);
   }
 
   private resolveFlutterStoreUrl(build: BuildEntity) {
@@ -114,9 +105,7 @@ export class RunnerService implements OnModuleInit {
       return rawPath;
     }
 
-    const baseUrl = String(
-      process.env.TASK_NOTIFICATION_DOWNLOAD_BASE_URL ?? '',
-    ).trim();
+    const baseUrl = getTaskNotificationDownloadBaseUrl();
     if (!baseUrl) {
       return null;
     }
@@ -144,43 +133,63 @@ export class RunnerService implements OnModuleInit {
 
   private async notifyExecutableTaskStatus(build: BuildEntity) {
     if (!build.repo || build.prNumber == null) {
-      return;
-    }
-
-    if (
-      build.repo.type !== RepoType.TYPESCRIPT &&
-      build.repo.type !== RepoType.ANGULAR
-    ) {
+      this.logger.log(
+        `Task notification skipped because build does not target a PR buildId=${build.id}`,
+      );
       return;
     }
 
     const webhookUrl = this.getTaskWebhookUrl();
     if (!webhookUrl) {
+      this.logger.log(
+        `Task notification skipped because TASK_NOTIFICATION_WEBHOOK_URL is not configured buildId=${build.id} repo=${build.repo.owner}/${build.repo.name} pr=${build.prNumber}`,
+      );
       return;
     }
 
     if (build.status !== BuildStatus.SUCCESS) {
-      // External task endpoint expects downloadUrl/expiresAt for available artifacts.
+      this.logger.log(
+        `Task notification skipped because build status is not SUCCESS buildId=${build.id} status=${build.status} repo=${build.repo.owner}/${build.repo.name} pr=${build.prNumber}`,
+      );
       return;
     }
 
-    const downloadUrl = this.resolveExecutableDownloadUrl(build.artifactPath ?? null);
-    if (!downloadUrl) {
-      // No public download URL available, notification will be skipped silently.
-      // This is normal if TASK_NOTIFICATION_DOWNLOAD_BASE_URL is not configured.
+    if (!build.artifactPath) {
+      this.logger.warn(
+        `Task notification skipped because build artifactPath is missing buildId=${build.id} repo=${build.repo.owner}/${build.repo.name} pr=${build.prNumber}`,
+      );
       return;
     }
+
+    const isJavaBuild = build.repo.type === RepoType.JAVA;
+    const downloadUrl = this.resolveExecutableDownloadUrl(build.artifactPath ?? null);
+
+    if (!isJavaBuild && !downloadUrl) {
+      this.logger.warn(
+        `Task notification skipped because downloadUrl could not be resolved buildId=${build.id} artifactPath=${build.artifactPath} repo=${build.repo.owner}/${build.repo.name} pr=${build.prNumber}`,
+      );
+      return;
+    }
+
+    this.logger.log(
+      `Task notification will be sent buildId=${build.id} repo=${build.repo.owner}/${build.repo.name} pr=${build.prNumber} artifactPath=${build.artifactPath}` +
+        (downloadUrl ? ` downloadUrl=${downloadUrl}` : ' no downloadUrl (Java build)'),
+    );
 
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       owner: build.repo.owner,
       name: build.repo.name,
       branch: build.ref,
       prNumber: build.prNumber,
-      downloadUrl,
+      artifactPath: build.artifactPath,
       expiresAt,
     };
+
+    if (downloadUrl) {
+      payload.downloadUrl = downloadUrl;
+    }
 
     const send = async (keyForHeaders: string) => {
       const res = await fetch(webhookUrl, {
