@@ -325,4 +325,5 @@ export class GitHubService {
       return null;
     }
   }
+}
 
