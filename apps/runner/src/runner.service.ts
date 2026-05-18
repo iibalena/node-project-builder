@@ -25,6 +25,7 @@ import {
   getTaskNotificationWebhookUrl,
   tryDecodeTaskNotificationWebhookKey,
 } from '../../shared/src/notifications/task-notification.config';
+import { loggedFetch } from '../../shared/src/utils/http-logger';
 
 @Injectable()
 export class RunnerService implements OnModuleInit {
@@ -91,8 +92,8 @@ export class RunnerService implements OnModuleInit {
     return `https://play.google.com/store/apps/details?id=${encodeURIComponent(appId)}`;
   }
 
-  private isHttpUrl(value: string) {
-    return /^https?:\/\//i.test(String(value ?? '').trim());
+  private isDownloadUrl(value: string) {
+    return /^(?:https?|ftp):\/\//i.test(String(value ?? '').trim());
   }
 
   private resolveExecutableDownloadUrl(artifactPath: string | null) {
@@ -101,13 +102,15 @@ export class RunnerService implements OnModuleInit {
       return null;
     }
 
-    if (this.isHttpUrl(rawPath)) {
+    if (this.isDownloadUrl(rawPath)) {
       return rawPath;
     }
 
     const baseUrl = getTaskNotificationDownloadBaseUrl();
     if (!baseUrl) {
-      return null;
+      const windowsPath = rawPath.replace(/\\/g, '/');
+      const normalized = windowsPath.replace(/^[A-Za-z]:[\/]+/, '');
+      return `ftp://${normalized}`.toLowerCase();
     }
 
     const execDir = String(process.env.EXECUTABLES_DIR ?? '').trim();
@@ -192,14 +195,14 @@ export class RunnerService implements OnModuleInit {
     }
 
     const send = async (keyForHeaders: string) => {
-      const res = await fetch(webhookUrl, {
+      const res = await loggedFetch(webhookUrl, {
         method: 'PUT',
         headers: {
           'content-type': 'application/json',
           ...this.getTaskAuthHeaders(keyForHeaders),
         },
         body: JSON.stringify(payload),
-      });
+      }, 'RunnerService.notifyExecutableTaskStatus() - Task Webhook Notification');
 
       const text = await res.text();
       if (!res.ok) {
@@ -256,7 +259,7 @@ export class RunnerService implements OnModuleInit {
       }),
     );
 
-    const createRes = await fetch(`${apiBaseUrl}/publications`, {
+    const createRes = await loggedFetch(`${apiBaseUrl}/publications`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -265,7 +268,7 @@ export class RunnerService implements OnModuleInit {
         track: process.env.PUBLICATION_DEFAULT_TRACK ?? 'internal',
         provider: 'google-play',
       }),
-    });
+    }, 'RunnerService.autoCreateAndExecutePublication() - Create Publication');
 
     const createText = await createRes.text();
     let createData: any = null;
@@ -296,13 +299,14 @@ export class RunnerService implements OnModuleInit {
       return;
     }
 
-    const executeRes = await fetch(
+    const executeRes = await loggedFetch(
       `${apiBaseUrl}/publications/${publicationId}/execute`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ dryRun }),
       },
+      'RunnerService.autoCreateAndExecutePublication() - Execute Publication',
     );
 
     const executeText = await executeRes.text();
