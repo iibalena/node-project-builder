@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { I18nService } from '../../../shared/src/i18n/i18n.service';
+import { loggedFetch } from '../../../shared/src/utils/http-logger';
 
 @Injectable()
 export class SyncService {
@@ -25,11 +26,11 @@ export class SyncService {
 
     const url = `${baseUrl.replace(/\/$/, '')}/sync/now`;
     try {
-      const res = await fetch(url, {
+      const res = await loggedFetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
-      });
+      }, 'SyncService.syncNow() - Trigger Sync Now');
 
       const text = await res.text();
       let data: any = null;
@@ -55,11 +56,11 @@ export class SyncService {
 
     const url = `${baseUrl.replace(/\/$/, '')}/sync/repo`;
     try {
-      const res = await fetch(url, {
+      const res = await loggedFetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
-      });
+      }, 'SyncService.syncRepo() - Trigger Sync Repo');
 
       const text = await res.text();
       let data: any = null;

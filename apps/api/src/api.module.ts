@@ -8,6 +8,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { BuildsModule } from './builds/builds.module';
 import { SyncModule } from './sync/sync.module';
 import { PublicationsModule } from './publications/publications.module';
+import { DashboardController } from './dashboard.controller';
 import { I18nModule } from '../../shared/src/i18n/i18n.module';
 
 @Module({
@@ -22,7 +23,7 @@ import { I18nModule } from '../../shared/src/i18n/i18n.module';
     SyncModule,
     PublicationsModule,
   ],
-  controllers: [ApiController],
+  controllers: [ApiController, DashboardController],
   providers: [ApiService],
 })
 export class ApiModule {}

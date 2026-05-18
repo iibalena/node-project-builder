@@ -2,12 +2,17 @@ import { NestFactory } from '@nestjs/core';
 import { ApiModule } from './api.module';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import * as path from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(ApiModule, {
     rawBody: true,
   });
   const bodyLimit = String(process.env.API_BODY_LIMIT ?? '5mb').trim() || '5mb';
+  const publicPath = path.join(__dirname, '..', '..', '..', 'apps', 'api', 'public');
+  app.useStaticAssets(publicPath, {
+    prefix: '/dashboard/',
+  });
 
   app.useBodyParser('json', { limit: bodyLimit });
   app.useBodyParser('urlencoded', { limit: bodyLimit, extended: true });

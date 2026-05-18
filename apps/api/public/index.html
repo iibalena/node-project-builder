@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Build Dashboard</title>
+    <style>
+      body {
+        font-family: Inter, system-ui, sans-serif;
+        margin: 0;
+        background: #f4f6fb;
+        color: #111827;
+      }
+      header {
+        background: #1f2937;
+        color: white;
+        padding: 20px 24px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 1.4rem;
+      }
+      header p {
+        margin: 8px 0 0;
+        color: #cbd5e1;
+      }
+      main {
+        max-width: 1180px;
+        margin: 24px auto;
+        padding: 0 24px 24px;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .toolbar select,
+      .toolbar button {
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 10px 14px;
+        background: white;
+        color: #111827;
+        font-size: 0.95rem;
+      }
+      .toolbar button {
+        cursor: pointer;
+        border-color: #4f46e5;
+        color: #fff;
+        background: #4f46e5;
+      }
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .card {
+        border-radius: 16px;
+        border: 1px solid #e5e7eb;
+        background: #ffffff;
+        padding: 18px;
+      }
+      .card strong {
+        display: block;
+        font-size: 1.05rem;
+      }
+      .card span {
+        color: #6b7280;
+        margin-top: 6px;
+        display: block;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 12px 14px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      th {
+        background: #f8fafc;
+        color: #111827;
+        font-weight: 600;
+      }
+      .status {
+        display: inline-flex;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 0.85rem;
+        font-weight: 700;
+      }
+      .status.QUEUED { background: #fef3c7; color: #92400e; }
+      .status.RUNNING { background: #dbeafe; color: #1d4ed8; }
+      .status.SUCCESS { background: #dcfce7; color: #166534; }
+      .status.FAILED { background: #fee2e2; color: #991b1b; }
+      .muted {
+        color: #6b7280;
+      }
+      .small {
+        font-size: 0.85rem;
+      }
+      .grid-two {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 14px;
+      }
+      @media (max-width: 720px) {
+        .grid-two {
+          grid-template-columns: 1fr;
+        }
+      }
+      .spinner {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border: 3px solid rgba(255,255,255,0.45);
+        border-top-color: #fff;
+        border-radius: 999px;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Build Dashboard</h1>
+      <p>Visualize os builds recentes e o estado atual das execuções.</p>
+    </header>
+    <main>
+      <div class="toolbar">
+        <select id="statusFilter">
+          <option value="">Todos os status</option>
+          <option value="QUEUED">Queued</option>
+          <option value="RUNNING">Running</option>
+          <option value="SUCCESS">Success</option>
+          <option value="FAILED">Failed</option>
+        </select>
+        <button id="refreshButton">Atualizar</button>
+        <span id="loadingIndicator" style="display:none; align-items:center; gap:8px;"><span class="spinner"></span>Carregando...</span>
+      </div>
+      <div class="summary" id="summaryCards"></div>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Build</th>
+              <th>Repo / Branch</th>
+              <th>Commit</th>
+              <th>Status</th>
+              <th>Iniciado</th>
+            </tr>
+          </thead>
+          <tbody id="buildsTable"></tbody>
+        </table>
+      </div>
+    </main>
+    <script>
+      const statusFilter = document.getElementById('statusFilter');
+      const refreshButton = document.getElementById('refreshButton');
+      const loadingIndicator = document.getElementById('loadingIndicator');
+      const buildsTable = document.getElementById('buildsTable');
+      const summaryCards = document.getElementById('summaryCards');
+
+      function formatDate(value) {
+        return new Date(value).toLocaleString('pt-BR', { hour12: false });
+      }
+
+      function createStatusChip(status) {
+        const span = document.createElement('span');
+        span.className = `status ${status}`;
+        span.textContent = status;
+        return span;
+      }
+
+      function renderSummary(stats) {
+        summaryCards.innerHTML = '';
+        const items = [
+          { label: 'Total', value: stats.total },
+          { label: 'Em fila', value: stats.queued },
+          { label: 'Executando', value: stats.running },
+          { label: 'Sucesso', value: stats.success },
+          { label: 'Falha', value: stats.failed },
+        ];
+        items.forEach(({ label, value }) => {
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.innerHTML = `<strong>${value}</strong><span>${label}</span>`;
+          summaryCards.appendChild(card);
+        });
+      }
+
+      function renderBuilds(builds) {
+        buildsTable.innerHTML = '';
+        if (!builds.length) {
+          buildsTable.innerHTML = '<tr><td colspan="5" class="muted">Nenhuma build encontrada.</td></tr>';
+          return;
+        }
+
+        builds.forEach((build) => {
+          const repoLabel = build.repo ? `${build.repo.owner}/${build.repo.name}` : `repoId:${build.repoId}`;
+          const refLabel = build.prNumber ? `PR #${build.prNumber}` : build.ref;
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td class="small">${build.id}</td>
+            <td>
+              <strong>${repoLabel}</strong><br />
+              <span class="muted">${refLabel}</span>
+            </td>
+            <td class="small">${build.commitSha.slice(0, 7)}</td>
+            <td></td>
+            <td class="small">${formatDate(build.createdAt)}</td>
+          `;
+          row.children[3].appendChild(createStatusChip(build.status));
+          buildsTable.appendChild(row);
+        });
+      }
+
+      async function loadBuilds() {
+        const status = statusFilter.value;
+        const query = status ? `?status=${encodeURIComponent(status)}` : '';
+        loadingIndicator.style.display = 'inline-flex';
+        try {
+          const res = await fetch(`/builds${query}`);
+          const builds = await res.json();
+          const stats = builds.reduce(
+            (acc, build) => {
+              acc.total += 1;
+              if (build.status === 'QUEUED') acc.queued += 1;
+              if (build.status === 'RUNNING') acc.running += 1;
+              if (build.status === 'SUCCESS') acc.success += 1;
+              if (build.status === 'FAILED') acc.failed += 1;
+              return acc;
+            },
+            { total: 0, queued: 0, running: 0, success: 0, failed: 0 },
+          );
+          renderSummary(stats);
+          renderBuilds(builds);
+        } catch (error) {
+          buildsTable.innerHTML = `<tr><td colspan="5" class="muted">Erro ao carregar builds: ${error.message}</td></tr>`;
+          summaryCards.innerHTML = '';
+        } finally {
+          loadingIndicator.style.display = 'none';
+        }
+      }
+
+      refreshButton.addEventListener('click', loadBuilds);
+      statusFilter.addEventListener('change', loadBuilds);
+      loadBuilds();
+    </script>
+  </body>
+</html>

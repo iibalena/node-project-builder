@@ -14,6 +14,7 @@ export class BuildsService {
   async list(args: ListBuildsDto) {
     const qb = this.buildRepository
       .createQueryBuilder('b')
+      .leftJoinAndSelect('b.repo', 'repo')
       .orderBy('b.createdAt', 'DESC')
       .limit(50);
 
