@@ -142,6 +142,17 @@ export class RunnerService implements OnModuleInit {
       return;
     }
 
+    // Flutter apps are distributed through the store (Google Play Internal App
+    // Sharing). The store publication flow notifies the task with the real Play
+    // download link (PublicationsService.notifyBuildAvailable), so the runner
+    // must not send a notification here with the local build artifact path.
+    if (build.repo.type === RepoType.FLUTTER) {
+      this.logger.log(
+        `Task notification skipped for Flutter build; store publication flow notifies with the Play link buildId=${build.id} repo=${build.repo.owner}/${build.repo.name} pr=${build.prNumber}`,
+      );
+      return;
+    }
+
     const webhookUrl = this.getTaskWebhookUrl();
     if (!webhookUrl) {
       this.logger.log(
