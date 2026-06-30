@@ -52,6 +52,16 @@ export class RepoEntity extends BaseEntity {
   @Column({ name: 'ios_bundle_id', type: 'varchar', length: 255, nullable: true })
   iosBundleId: string | null;
 
+  // Quando false (default), builds de PR publicam na faixa de Teste interno (TRACK)
+  // em vez de Internal App Sharing (que exige o app publicado em producao).
+  @Column({ name: 'play_production_ready', type: 'boolean', default: false })
+  playProductionReady: boolean;
+
+  // Link de opt-in da faixa de Teste interno (aba Testers do Play Console).
+  // Fixo por app; usado no comentario do PR quando se publica via TRACK interno.
+  @Column({ name: 'play_internal_testing_url', type: 'text', nullable: true })
+  playInternalTestingUrl: string | null;
+
   @OneToMany(() => BuildEntity, (b) => b.repo)
   builds: BuildEntity[];
 }

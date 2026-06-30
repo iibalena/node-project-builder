@@ -342,10 +342,16 @@ export class NodeBuilderService {
 
       const isMasterBuild = refSegment === 'master' && !build.prNumber;
       const masterExecutablesDir = this.getMasterExecutablesDir();
-      const baseExecutablesDir =
-        isMasterBuild && masterExecutablesDir
-          ? masterExecutablesDir
-          : this.getExecutablesDir() || artifactsDir;
+      const baseExecutablesDir = isMasterBuild
+        ? masterExecutablesDir
+        : this.getExecutablesDir();
+      if (!baseExecutablesDir) {
+        throw new Error(
+          isMasterBuild
+            ? 'MASTER_EXECUTABLES_DIR nao configurado: defina o diretorio de master (rede) para publicar o artefato.'
+            : 'EXECUTABLES_DIR nao configurado: defina o diretorio de executaveis (rede) para publicar o artefato.',
+        );
+      }
 
       const finalDir = isMasterBuild
         ? path.join(baseExecutablesDir, repoName)

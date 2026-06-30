@@ -72,6 +72,8 @@ export class ReposService {
       nodeVersion: data.nodeVersion?.trim() || null,
       androidAppId: null,
       iosBundleId: null,
+      playProductionReady: data.playProductionReady ?? false,
+      playInternalTestingUrl: data.playInternalTestingUrl?.trim() || null,
     });
 
     let saved: RepoEntity;
@@ -163,6 +165,17 @@ export class ReposService {
     } else if (typeof data.nodeVersion === 'string') {
       const value = data.nodeVersion.trim();
       repo.nodeVersion = value.length > 0 ? value : null;
+    }
+
+    if (typeof data.playProductionReady === 'boolean') {
+      repo.playProductionReady = data.playProductionReady;
+    }
+
+    if (data.playInternalTestingUrl === null) {
+      repo.playInternalTestingUrl = null;
+    } else if (typeof data.playInternalTestingUrl === 'string') {
+      const value = data.playInternalTestingUrl.trim();
+      repo.playInternalTestingUrl = value.length > 0 ? value : null;
     }
 
     const saved = await this.repoRepository.save(repo);

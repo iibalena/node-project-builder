@@ -44,4 +44,12 @@ export class CreateRepoDto {
   @IsString()
   @IsNotEmpty()
   nodeVersion?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  playProductionReady?: boolean;
+
+  @IsOptional()
+  @IsString()
+  playInternalTestingUrl?: string | null;
 }

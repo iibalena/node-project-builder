@@ -210,10 +210,16 @@ export class AngularBuilderService {
 
       const isMasterBuild = refSegment === 'master' && !build.prNumber;
       const masterExecutablesDir = this.getMasterExecutablesDir();
-      const baseDir =
-        isMasterBuild && masterExecutablesDir
-          ? masterExecutablesDir
-          : this.getArtifactsRoot();
+      const baseDir = isMasterBuild
+        ? masterExecutablesDir
+        : this.getExecutablesDir();
+      if (!baseDir) {
+        throw new Error(
+          isMasterBuild
+            ? 'MASTER_EXECUTABLES_DIR nao configurado: defina o diretorio de master (rede) para publicar o dist.'
+            : 'EXECUTABLES_DIR nao configurado: defina o diretorio de executaveis (rede) para publicar o dist.',
+        );
+      }
 
       const masterProjectDir = path.join(baseDir, repoName);
       const finalDir = isMasterBuild

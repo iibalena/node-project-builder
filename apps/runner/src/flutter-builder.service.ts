@@ -428,7 +428,14 @@ export class FlutterBuilderService {
       const buildOutputsRoot = path.join(repoDir, 'build', 'app', 'outputs');
       await fs.promises.rm(buildOutputsRoot, { recursive: true, force: true });
 
-      const appbundleCommand = `${flutterBin} build appbundle --release --target ${JSON.stringify(entryPoint)}`;
+      // Repos fora de producao publicam na faixa de Teste interno (TRACK), que exige
+      // versionCode unico e crescente a cada upload. Forcamos --build-number=<build.id>
+      // (monotonico) para evitar colisao entre builds. Em producao mantemos o versionCode
+      // do pubspec (Internal App Sharing nao tem essa restricao).
+      const buildNumberArg = repo?.playProductionReady
+        ? ''
+        : ` --build-number=${build.id}`;
+      const appbundleCommand = `${flutterBin} build appbundle --release --target ${JSON.stringify(entryPoint)}${buildNumberArg}`;
       await logger.log(this.i18n.t('builder.flutter_appbundle_running', { cmd: appbundleCommand }));
       await this.runCommand(logger, repoDir, appbundleCommand, 'flutter build appbundle output');
       await logger.log(this.i18n.t('builder.flutter_appbundle_finished'));

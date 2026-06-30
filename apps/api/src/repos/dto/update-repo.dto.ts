@@ -43,4 +43,12 @@ export class UpdateRepoDto {
   @IsString()
   @IsNotEmpty()
   nodeVersion?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  playProductionReady?: boolean;
+
+  @IsOptional()
+  @IsString()
+  playInternalTestingUrl?: string | null;
 }

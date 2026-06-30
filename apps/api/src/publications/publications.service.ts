@@ -81,11 +81,21 @@ export class PublicationsService {
   private resolveDistributionForBuild(args: {
     build: BuildEntity;
     requestedTrack?: string;
+    productionReady?: boolean;
   }) {
     if (this.isPrBuild(args.build)) {
+      // App ja em producao: usa Internal App Sharing (link efemero por build).
+      if (args.productionReady) {
+        return {
+          distributionType: PublicationDistributionType.INTERNAL_APP_SHARING,
+          track: null,
+        };
+      }
+      // App ainda fora de producao: publica na faixa de Teste interno (TRACK),
+      // que nao exige o app publicado em producao.
       return {
-        distributionType: PublicationDistributionType.INTERNAL_APP_SHARING,
-        track: null,
+        distributionType: PublicationDistributionType.TRACK,
+        track: 'internal',
       };
     }
 
@@ -93,6 +103,37 @@ export class PublicationsService {
       distributionType: PublicationDistributionType.TRACK,
       track: this.normalizeTrack(args.requestedTrack),
     };
+  }
+
+  private async getRepoProductionReady(repoId: number): Promise<boolean> {
+    const repo = await this.repoRepository.findOne({ where: { id: repoId } });
+    return repo?.playProductionReady ?? false;
+  }
+
+  private buildInternalTrackComment(args: {
+    build: BuildEntity;
+    versionCode: number | null;
+    optInUrl: string;
+  }) {
+    const commitShort = String(args.build.commitSha ?? '').slice(0, 7);
+    const lines = [
+      'Build publicado na faixa de Teste interno do Google Play:',
+      '',
+      `Branch: ${args.build.ref}`,
+      `Commit: ${commitShort}`,
+    ];
+    if (args.versionCode != null) {
+      lines.push(`versionCode: ${args.versionCode}`);
+    }
+    if (args.optInUrl) {
+      lines.push('', `Acesso (testers): ${args.optInUrl}`);
+    } else {
+      lines.push(
+        '',
+        'Acesso: abra o app pela sua conta de tester interno (link de opt-in nao configurado no repo).',
+      );
+    }
+    return lines.join('\n');
   }
 
   private buildPrCommentMessage(args: {
@@ -230,6 +271,7 @@ export class PublicationsService {
     const distribution = this.resolveDistributionForBuild({
       build,
       requestedTrack: dto.track,
+      productionReady: await this.getRepoProductionReady(build.repoId),
     });
     const artifactHash = await this.hashFileSha256(build.artifactPath!);
 
@@ -277,6 +319,7 @@ export class PublicationsService {
     const distribution = this.resolveDistributionForBuild({
       build,
       requestedTrack: dto.track,
+      productionReady: await this.getRepoProductionReady(build.repoId),
     });
     const provider = dto.provider ?? PublicationProvider.GOOGLE_PLAY;
     const artifactHash = await this.hashFileSha256(build.artifactPath!);
@@ -571,6 +614,66 @@ export class PublicationsService {
           }),
         );
 
+        let prCommentMessage: string | null = null;
+        let prCommentPosted = false;
+        let prCommentError: string | null = null;
+        let taskNotificationSent = false;
+        let taskNotificationError: string | null = null;
+
+        if (build.prNumber != null && !result.dryRun) {
+          const optInUrl = String(repo.playInternalTestingUrl ?? '').trim();
+          prCommentMessage = this.buildInternalTrackComment({
+            build,
+            versionCode: publication.versionCode,
+            optInUrl,
+          });
+
+          try {
+            await this.githubRepoService.postPrComment(
+              repo.owner,
+              repo.name,
+              build.prNumber,
+              prCommentMessage,
+            );
+            prCommentPosted = true;
+            this.logger.log(
+              this.i18n.t('publication.pr_comment_posted', {
+                publicationId: publication.id,
+                prNumber: build.prNumber,
+              }),
+            );
+          } catch (commentErr: any) {
+            prCommentError = commentErr?.message ?? String(commentErr);
+            this.logger.warn(
+              this.i18n.t('publication.pr_comment_failed', {
+                publicationId: publication.id,
+                prNumber: build.prNumber,
+                error: prCommentError,
+              }),
+            );
+          }
+
+          if (optInUrl) {
+            try {
+              const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+              const notificationResult =
+                await this.taskNotification.notifyBuildAvailable({
+                  owner: repo.owner,
+                  name: repo.name,
+                  branch: build.ref,
+                  prNumber: build.prNumber,
+                  downloadUrl: optInUrl,
+                  expiresAt,
+                });
+              taskNotificationSent = notificationResult.sent;
+              taskNotificationError = notificationResult.error;
+            } catch (notifyErr: any) {
+              taskNotificationError = notifyErr?.message ?? String(notifyErr);
+              this.logger.warn(`Task notification error: ${taskNotificationError}`);
+            }
+          }
+        }
+
         return {
           ok: true,
           publicationId: publication.id,
@@ -579,6 +682,11 @@ export class PublicationsService {
           versionCode: publication.versionCode,
           externalReleaseId: publication.externalReleaseId,
           downloadUrl: publication.downloadUrl,
+          prCommentMessage,
+          prCommentPosted,
+          prCommentError,
+          taskNotificationSent,
+          taskNotificationError,
           dryRun: result.dryRun,
         };
       }

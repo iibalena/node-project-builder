@@ -374,7 +374,7 @@ export class RunnerService implements OnModuleInit {
             `✅ Build #${build.id} concluido com sucesso.`,
             `- Repo: ${build.repo.owner}/${build.repo.name}`,
             `- Branch: ${build.ref}`,
-            `- Executavel: ${build.artifactPath ?? '(nao encontrado)'}`,
+            `- Download: ${this.resolveExecutableDownloadUrl(build.artifactPath ?? null) ?? build.artifactPath ?? '(nao encontrado)'}`,
           ].join('\n')
         : [
             `❌ Build #${build.id} falhou.`,
