@@ -111,6 +111,46 @@ export class JavaBuilderService {
     return value.replace(/[\\/:*?"<>|]/g, '-').trim();
   }
 
+  private tail(text: string, maxChars: number): string {
+    const trimmed = (text ?? '').trim();
+    if (!trimmed) return '';
+    if (trimmed.length <= maxChars) return trimmed;
+    return `...(truncado)...\n${trimmed.slice(trimmed.length - maxChars)}`;
+  }
+
+  private extractMavenErrors(output: string): string {
+    if (!output) return '';
+    return output
+      .split(/\r?\n/)
+      .filter((line) => /\[ERROR\]|BUILD FAILURE/.test(line))
+      .join('\n')
+      .trim();
+  }
+
+  // child_process exec rejects with an Error whose `.message` is only
+  // "Command failed: ...". The real Maven output lives in `.stdout`/`.stderr`,
+  // so surface it here — otherwise build logs hide the actual cause.
+  private formatExecError(err: any): string {
+    const baseMessage = err?.message ?? String(err);
+    const stdout = typeof err?.stdout === 'string' ? err.stdout : '';
+    const stderr = typeof err?.stderr === 'string' ? err.stderr : '';
+
+    const sections = [baseMessage];
+
+    // Maven marks every failure line with [ERROR]; prefer those when present.
+    const mavenErrors = this.extractMavenErrors(`${stdout}\n${stderr}`);
+    if (mavenErrors) {
+      sections.push(`--- Maven [ERROR] ---\n${this.tail(mavenErrors, 6000)}`);
+    } else {
+      const stderrTail = this.tail(stderr, 4000);
+      if (stderrTail) sections.push(`--- stderr ---\n${stderrTail}`);
+      const stdoutTail = this.tail(stdout, 6000);
+      if (stdoutTail) sections.push(`--- saída (final) ---\n${stdoutTail}`);
+    }
+
+    return sections.join('\n');
+  }
+
   private async removeDirIfExists(dir: string) {
     try {
       await fs.promises.access(dir);
@@ -295,7 +335,7 @@ export class JavaBuilderService {
       await logger.log(this.i18n.t('builder.java_build_success'));
 
     } catch (err: any) {
-      const error = err?.message ?? String(err);
+      const error = this.formatExecError(err);
       await logger.error(this.i18n.t('builder.java_build_failed', { error }));
       await this.buildRepository.update(build.id, {
         status: BuildStatus.FAILED,
