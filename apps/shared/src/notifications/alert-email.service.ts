@@ -180,7 +180,12 @@ export class AlertEmailService {
     duration?: number;
     artifactPath?: string;
     storeUrl?: string;
+    warnings?: string[];
   }): Promise<{ sent: boolean; reason?: string }> {
+    const warningLines =
+      args.warnings && args.warnings.length > 0
+        ? ['', 'Avisos:', ...args.warnings.map((w) => `  ⚠️ ${w}`)]
+        : [];
     const subject =
       args.status === 'SUCCESS'
         ? `[Build ${args.buildId}] SUCCESS ${args.repoOwner}/${args.repoName} - ${args.branch}`
@@ -204,6 +209,7 @@ export class AlertEmailService {
             args.storeUrl
               ? `  Loja: ${args.storeUrl}`
               : `  Executavel: ${args.artifactPath || '(nao informado)'}`,
+            ...warningLines,
             '',
           ].join('\n')
         : [

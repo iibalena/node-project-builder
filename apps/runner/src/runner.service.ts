@@ -252,11 +252,11 @@ export class RunnerService implements OnModuleInit {
 
   private async autoCreateAndExecutePublication(build: BuildEntity) {
     if (!this.isAutoPublicationOnPrEnabled()) {
-      return;
+      return null;
     }
 
     if (build.trigger !== BuildTrigger.PR) {
-      return;
+      return null;
     }
 
     const apiBaseUrl = this.getApiBaseUrl();
@@ -307,7 +307,7 @@ export class RunnerService implements OnModuleInit {
           response: JSON.stringify(createData),
         }),
       );
-      return;
+      return null;
     }
 
     const executeRes = await loggedFetch(
@@ -339,6 +339,30 @@ export class RunnerService implements OnModuleInit {
         response: executeText,
       }),
     );
+
+    let taskNotificationSent = false;
+    let taskNotificationSkippedReason: string | null = null;
+    let taskNotificationError: string | null = null;
+    let distributionType: string | null = null;
+    try {
+      const parsed = executeText ? JSON.parse(executeText) : null;
+      if (parsed) {
+        taskNotificationSent = Boolean(parsed.taskNotificationSent);
+        taskNotificationSkippedReason =
+          parsed.taskNotificationSkippedReason ?? null;
+        taskNotificationError = parsed.taskNotificationError ?? null;
+        distributionType = parsed.distributionType ?? null;
+      }
+    } catch {
+      // resposta nao-JSON; segue sem resumo
+    }
+    return {
+      taskNotificationSent,
+      taskNotificationSkippedReason,
+      taskNotificationError,
+      distributionType,
+      dryRun,
+    };
   }
 
   constructor(
@@ -656,6 +680,14 @@ export class RunnerService implements OnModuleInit {
         } | null;
       } | null = null;
 
+      let publicationSummary: {
+        taskNotificationSent: boolean;
+        taskNotificationSkippedReason: string | null;
+        taskNotificationError: string | null;
+        distributionType: string | null;
+        dryRun: boolean;
+      } | null = null;
+
       try {
       await logger.log(
         this.i18n.t('runner.searching_repo', {
@@ -720,7 +752,8 @@ export class RunnerService implements OnModuleInit {
         });
         if (updatedBuild?.status === BuildStatus.SUCCESS) {
           try {
-            await this.autoCreateAndExecutePublication(updatedBuild);
+            publicationSummary =
+              await this.autoCreateAndExecutePublication(updatedBuild);
           } catch (publicationErr: any) {
             await logger.error(
               this.i18n.t('runner.publication_auto_failed', {
@@ -795,6 +828,23 @@ export class RunnerService implements OnModuleInit {
               ? this.resolveFlutterStoreUrl(finalBuild)
               : null;
 
+          // Avisa se publicou na loja mas NAO conseguiu notificar o atendimento.
+          const warnings: string[] = [];
+          if (
+            publicationSummary &&
+            !publicationSummary.dryRun &&
+            !publicationSummary.taskNotificationSent
+          ) {
+            const reason =
+              publicationSummary.taskNotificationSkippedReason ||
+              publicationSummary.taskNotificationError;
+            if (reason) {
+              warnings.push(
+                `Publicado na loja, mas o ATENDIMENTO nao foi notificado. Motivo: ${reason}.`,
+              );
+            }
+          }
+
           await this.alertEmail.sendBuildAlert({
             buildId: finalBuild.id,
             repoOwner: finalBuild.repo.owner,
@@ -804,6 +854,7 @@ export class RunnerService implements OnModuleInit {
             duration,
             artifactPath: finalBuild.artifactPath ?? undefined,
             storeUrl: storeUrl ?? undefined,
+            warnings,
           });
         } else if (finalBuild.status === BuildStatus.FAILED) {
           const errorLog = finalBuild.log

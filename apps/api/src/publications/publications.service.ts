@@ -619,6 +619,7 @@ export class PublicationsService {
         let prCommentError: string | null = null;
         let taskNotificationSent = false;
         let taskNotificationError: string | null = null;
+        let taskNotificationSkippedReason: string | null = null;
 
         if (build.prNumber != null && !result.dryRun) {
           const optInUrl = String(repo.playInternalTestingUrl ?? '').trim();
@@ -671,6 +672,13 @@ export class PublicationsService {
               taskNotificationError = notifyErr?.message ?? String(notifyErr);
               this.logger.warn(`Task notification error: ${taskNotificationError}`);
             }
+          } else {
+            // Sem link de opt-in: nao da pra notificar o atendimento (webhook exige downloadUrl).
+            taskNotificationSkippedReason =
+              'playInternalTestingUrl nao configurado no repo';
+            this.logger.warn(
+              `Task notification skipped (sem playInternalTestingUrl) publicationId=${publication.id} repo=${repo.owner}/${repo.name} pr=${build.prNumber}`,
+            );
           }
         }
 
@@ -687,6 +695,7 @@ export class PublicationsService {
           prCommentError,
           taskNotificationSent,
           taskNotificationError,
+          taskNotificationSkippedReason,
           dryRun: result.dryRun,
         };
       }
