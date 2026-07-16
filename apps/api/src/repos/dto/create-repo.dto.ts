@@ -52,4 +52,20 @@ export class CreateRepoDto {
   @IsOptional()
   @IsString()
   playInternalTestingUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  androidKeystorePath?: string | null;
+
+  @IsOptional()
+  @IsString()
+  androidKeystoreKeyAlias?: string | null;
+
+  @IsOptional()
+  @IsString()
+  androidKeystoreStorePassword?: string | null;
+
+  @IsOptional()
+  @IsString()
+  androidKeystoreKeyPassword?: string | null;
 }

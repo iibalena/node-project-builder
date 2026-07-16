@@ -74,6 +74,10 @@ export class ReposService {
       iosBundleId: null,
       playProductionReady: data.playProductionReady ?? false,
       playInternalTestingUrl: data.playInternalTestingUrl?.trim() || null,
+      androidKeystorePath: data.androidKeystorePath?.trim() || null,
+      androidKeystoreKeyAlias: data.androidKeystoreKeyAlias?.trim() || null,
+      androidKeystoreStorePassword: data.androidKeystoreStorePassword || null,
+      androidKeystoreKeyPassword: data.androidKeystoreKeyPassword || null,
     });
 
     let saved: RepoEntity;
@@ -110,6 +114,9 @@ export class ReposService {
       );
     }
 
+    // Nunca devolver senhas de keystore na resposta da API.
+    delete (saved as Partial<RepoEntity>).androidKeystoreStorePassword;
+    delete (saved as Partial<RepoEntity>).androidKeystoreKeyPassword;
     return saved;
   }
 
@@ -178,6 +185,39 @@ export class ReposService {
       repo.playInternalTestingUrl = value.length > 0 ? value : null;
     }
 
+    if (data.androidKeystorePath === null) {
+      repo.androidKeystorePath = null;
+    } else if (typeof data.androidKeystorePath === 'string') {
+      const value = data.androidKeystorePath.trim();
+      repo.androidKeystorePath = value.length > 0 ? value : null;
+    }
+
+    if (data.androidKeystoreKeyAlias === null) {
+      repo.androidKeystoreKeyAlias = null;
+    } else if (typeof data.androidKeystoreKeyAlias === 'string') {
+      const value = data.androidKeystoreKeyAlias.trim();
+      repo.androidKeystoreKeyAlias = value.length > 0 ? value : null;
+    }
+
+    // Senhas: nao dar trim (podem conter caracteres significativos).
+    if (data.androidKeystoreStorePassword === null) {
+      repo.androidKeystoreStorePassword = null;
+    } else if (typeof data.androidKeystoreStorePassword === 'string') {
+      repo.androidKeystoreStorePassword =
+        data.androidKeystoreStorePassword.length > 0
+          ? data.androidKeystoreStorePassword
+          : null;
+    }
+
+    if (data.androidKeystoreKeyPassword === null) {
+      repo.androidKeystoreKeyPassword = null;
+    } else if (typeof data.androidKeystoreKeyPassword === 'string') {
+      repo.androidKeystoreKeyPassword =
+        data.androidKeystoreKeyPassword.length > 0
+          ? data.androidKeystoreKeyPassword
+          : null;
+    }
+
     const saved = await this.repoRepository.save(repo);
     this.logger.log(
       this.i18n.t('repos.updated', {
@@ -186,6 +226,9 @@ export class ReposService {
         id: saved.id,
       }),
     );
+    // Nunca devolver senhas de keystore na resposta da API.
+    delete (saved as Partial<RepoEntity>).androidKeystoreStorePassword;
+    delete (saved as Partial<RepoEntity>).androidKeystoreKeyPassword;
     return saved;
   }
 

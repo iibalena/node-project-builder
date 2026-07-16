@@ -142,17 +142,35 @@ export class FlutterBuilderService {
     return value.replace(/\r?\n/g, '').trim();
   }
 
-  private getAndroidSigningConfig() {
-    const keystorePath = this.sanitizeEnvValue(
+  private getAndroidSigningConfig(overrides?: {
+    keystorePath?: string | null;
+    storePassword?: string | null;
+    keyAlias?: string | null;
+    keyPassword?: string | null;
+  }) {
+    // Cada campo usa o override do repo quando preenchido, senao cai no .env global.
+    const pick = (override: string | null | undefined, envValue: string) => {
+      const fromOverride =
+        override != null && String(override).trim().length > 0
+          ? String(override)
+          : '';
+      return this.sanitizeEnvValue(fromOverride || envValue);
+    };
+
+    const keystorePath = pick(
+      overrides?.keystorePath,
       process.env.ANDROID_KEYSTORE_PATH ?? '',
     );
-    const storePassword = this.sanitizeEnvValue(
+    const storePassword = pick(
+      overrides?.storePassword,
       process.env.ANDROID_KEYSTORE_STORE_PASSWORD ?? '',
     );
-    const keyAlias = this.sanitizeEnvValue(
+    const keyAlias = pick(
+      overrides?.keyAlias,
       process.env.ANDROID_KEYSTORE_KEY_ALIAS ?? '',
     );
-    const keyPassword = this.sanitizeEnvValue(
+    const keyPassword = pick(
+      overrides?.keyPassword,
       process.env.ANDROID_KEYSTORE_KEY_PASSWORD ?? '',
     );
 
@@ -324,13 +342,58 @@ export class FlutterBuilderService {
     }
   }
 
+  private async getRepoKeystoreOverrides(
+    owner?: string,
+    name?: string,
+  ): Promise<
+    | {
+        keystorePath?: string | null;
+        storePassword?: string | null;
+        keyAlias?: string | null;
+        keyPassword?: string | null;
+      }
+    | undefined
+  > {
+    if (!owner || !name) return undefined;
+    try {
+      // Senhas sao select:false; precisam de addSelect explicito.
+      const repo = await this.repoRepository
+        .createQueryBuilder('repo')
+        .addSelect('repo.androidKeystoreStorePassword')
+        .addSelect('repo.androidKeystoreKeyPassword')
+        .where('repo.owner = :owner', { owner })
+        .andWhere('repo.name = :name', { name })
+        .getOne();
+      if (!repo || !repo.androidKeystorePath) return undefined;
+      return {
+        keystorePath: repo.androidKeystorePath,
+        storePassword: repo.androidKeystoreStorePassword,
+        keyAlias: repo.androidKeystoreKeyAlias,
+        keyPassword: repo.androidKeystoreKeyPassword,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
   private async prepareAndroidSigning(
     repoDir: string,
     logger: BuildLogger,
+    overrides?: {
+      keystorePath?: string | null;
+      storePassword?: string | null;
+      keyAlias?: string | null;
+      keyPassword?: string | null;
+    },
   ): Promise<{
     keyPropertiesPath: string;
   } | null> {
-    const signing = this.getAndroidSigningConfig();
+    const signing = this.getAndroidSigningConfig(overrides);
+    if (overrides?.keystorePath) {
+      await logger.log(
+        `Usando keystore especifico do repo (override): ${overrides.keystorePath}`,
+      );
+    }
     if (!signing) {
       await logger.log(this.i18n.t('builder.flutter_signing_env_not_configured'));
       return null;
@@ -414,7 +477,11 @@ export class FlutterBuilderService {
       await this.runCommand(logger, repoDir, pubGetCommand, 'flutter pub get output');
       await logger.log(this.i18n.t('builder.flutter_pub_get_finished'));
 
-      signingContext = await this.prepareAndroidSigning(repoDir, logger);
+      signingContext = await this.prepareAndroidSigning(
+        repoDir,
+        logger,
+        await this.getRepoKeystoreOverrides(repoOwner, repoName),
+      );
 
       if (this.shouldRunFlutterTests()) {
         const testCommand = `${flutterBin} test`;

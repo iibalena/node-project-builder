@@ -62,6 +62,36 @@ export class RepoEntity extends BaseEntity {
   @Column({ name: 'play_internal_testing_url', type: 'text', nullable: true })
   playInternalTestingUrl: string | null;
 
+  // Keystore Android por-app (override do global do .env). Quando null, usa o .env.
+  // Ex.: o app pode ter sido registrado no Play com uma chave de upload propria.
+  @Column({ name: 'android_keystore_path', type: 'text', nullable: true })
+  androidKeystorePath: string | null;
+
+  @Column({
+    name: 'android_keystore_key_alias',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  androidKeystoreKeyAlias: string | null;
+
+  // Senhas: select:false para nunca voltarem em GET /repos.
+  @Column({
+    name: 'android_keystore_store_password',
+    type: 'text',
+    nullable: true,
+    select: false,
+  })
+  androidKeystoreStorePassword: string | null;
+
+  @Column({
+    name: 'android_keystore_key_password',
+    type: 'text',
+    nullable: true,
+    select: false,
+  })
+  androidKeystoreKeyPassword: string | null;
+
   @OneToMany(() => BuildEntity, (b) => b.repo)
   builds: BuildEntity[];
 }
