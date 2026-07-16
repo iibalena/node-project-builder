@@ -287,12 +287,28 @@ export class JavaBuilderService {
 
       // Find the generated JAR file
       const targetDir = path.join(repoDir, 'target');
-      const jarFiles = await fs.promises.readdir(targetDir).then(entries =>
-        entries.filter(entry => entry.endsWith('.jar') && !entry.includes('-javadoc') && !entry.includes('-sources'))
+      const allJars = (await fs.promises.readdir(targetDir)).filter(
+        (entry) =>
+          entry.endsWith('.jar') &&
+          !entry.includes('-javadoc') &&
+          !entry.includes('-sources'),
       );
+
+      // O cliente roda o JAR "normal", NAO o "-jar-with-dependencies" (fat jar).
+      // Preferimos o normal; so usamos o fat jar se nenhum outro existir.
+      const normalJars = allJars.filter(
+        (entry) => !entry.includes('-jar-with-dependencies'),
+      );
+      const jarFiles = normalJars.length > 0 ? normalJars : allJars;
 
       if (jarFiles.length === 0) {
         throw new Error(this.i18n.t('builder.java_no_jar_found'));
+      }
+
+      if (normalJars.length === 0) {
+        await logger.log(
+          'Aviso: so encontrei o JAR "-jar-with-dependencies"; usando-o por falta de um JAR normal.',
+        );
       }
 
       // Use the first JAR file found (typically the main artifact)
